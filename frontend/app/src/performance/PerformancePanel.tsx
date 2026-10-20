@@ -1,3 +1,6 @@
+import { computed } from "mobx"
+import { isEqual } from "lodash"
+import { isNoteEvent } from "@signal-app/core"
 import { noteNameWithOctString } from "../helpers/noteNumberString"
 import { useAtom } from "jotai"
 import { activeProfileAtom, mappingStateAtom } from "./mappingState"
@@ -121,6 +124,12 @@ export function PerformancePanel() {
   const { trackMute } = useTrackMute()
   const { selectedTrack } = usePianoRoll()
   const position = useMobxSelector(() => player.position, [player])
+  const timelineNotes = useMemo(() => computed(() => songStore.song.tracks
+    .filter((track) => TrackMute.shouldPlayTrack(track.id)(trackMute))
+    .flatMap((track) => track.events.filter(isNoteEvent))), [songStore, trackMute])
+  const heldNotes = useMobxSelector(() => timelineNotes.get()
+    .filter((note) => note.tick <= player.position && player.position < note.tick + note.duration)
+    .map((note) => note.noteNumber), [timelineNotes, player], isEqual)
   const [enabled, setEnabled] = useState(false)
   const [environment, setEnvironment] = useState<"editor" | "game">("editor")
   const [wait, setWait] = useState(true)
@@ -130,7 +139,6 @@ export function PerformancePanel() {
   const [profileJSON, setProfileJSON] = useState(() => JSON.stringify(profile, null, 2))
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set())
   const [pressCounts, setPressCounts] = useState<Record<number, number>>({})
-  const [playbackNotes, setPlaybackNotes] = useState<Set<number>>(new Set())
   const [pressedNotes, setPressedNotes] = useState<Set<number>>(new Set())
   const [targetIndex, setTargetIndex] = useState(0)
   const [autoPlayStatus, setAutoPlayStatus] = useState("")
@@ -257,35 +265,23 @@ export function PerformancePanel() {
 
   useEffect(() => {
     const timers = new Map<ReturnType<typeof setTimeout>, number>()
-    const sounding = new Map<string, number>()
-    const publish = () => setPlaybackNotes(new Set(sounding.values()))
     const off = synthGroup.onPlayback((event, delay, timestamp, trackId) => {
       if (event.type !== "channel") return
       const channel = event.channel
-      const clearChannel = () => {
-        if (delay <= 0) for (const [timer, ch] of timers) if (ch === channel) { clearTimeout(timer); timers.delete(timer) }
-        for (const key of sounding.keys()) if (key.startsWith(`${channel}:`)) sounding.delete(key)
-        publish()
-      }
       if (event.subtype === "controller" && [120, 123].includes(event.controllerType)) {
-        if (delay <= 0) clearChannel()
-        else {
-          const timer = setTimeout(() => { timers.delete(timer); clearChannel() }, Math.max(0, timestamp + delay * 1000 - performance.now()))
-          timers.set(timer, channel)
+        if (delay <= 0) {
+          for (const [timer, ch] of timers) {
+            if (ch === channel) { clearTimeout(timer); timers.delete(timer) }
+          }
         }
         return
       }
       // Monitoring/preview already comes through MIDIInput, and must never advance practice.
-      if (trackId === undefined || (event.subtype !== "noteOn" && event.subtype !== "noteOff")) return
+      if (player.isScrubbing || trackId === undefined || event.subtype !== "noteOn" || event.velocity === 0) return
       const timer = setTimeout(() => {
         timers.delete(timer)
-        if (!player.isPlaying) return
-        const key = `${channel}:${trackId}:${event.noteNumber}`
-        if (event.subtype === "noteOn" && event.velocity > 0) {
-          sounding.set(key, event.noteNumber)
-          setPressCounts((counts) => ({ ...counts, [event.noteNumber]: (counts[event.noteNumber] ?? 0) + 1 }))
-        } else sounding.delete(key)
-        publish()
+        if (!player.isPlaying || player.isScrubbing) return
+        setPressCounts((counts) => ({ ...counts, [event.noteNumber]: (counts[event.noteNumber] ?? 0) + 1 }))
       }, Math.max(0, timestamp + delay * 1000 - performance.now()))
       timers.set(timer, channel)
     })
@@ -297,7 +293,7 @@ export function PerformancePanel() {
   }, [target?.tick])
 
   useEffect(() => {
-    if (!enabled || !target || (!player.isPlaying && waitingTickRef.current !== target.tick)) return
+    if (player.isScrubbing || !enabled || !target || (!player.isPlaying && waitingTickRef.current !== target.tick)) return
     if (matchesFreshChord(target.notes, pressedNotes, pressedSinceTargetRef.current)) {
       passedTickRef.current = target.tick
       setTargetIndex((index) => Math.min(index + 1, groups.length - 1))
@@ -309,7 +305,7 @@ export function PerformancePanel() {
   }, [enabled, groups.length, player, pressedNotes, target, wait])
 
   useEffect(() => {
-    if (enabled && wait && target && target.tick !== passedTickRef.current && player.isPlaying && position >= target.tick) {
+    if (!player.isScrubbing && enabled && wait && target && target.tick !== passedTickRef.current && player.isPlaying && position >= target.tick) {
       waitingTickRef.current = target.tick
       player.stop()
       player.position = target.tick
@@ -406,8 +402,10 @@ export function PerformancePanel() {
       {keyboardRows.map((row, rowIndex) => <KeyRow row={rowIndex} key={row[0]}>{row.map((code) => {
         const mapped = keyToPitch(profile, mappingState, code)
         const note = mapped.type === "note" ? mapped.noteNumber : undefined
+        const pressed = pressedKeys.has(code) || (note !== undefined && pressedNotes.has(note))
+        const held = pressed || (note !== undefined && heldNotes.includes(note))
         return (
-        <Key key={code} active={pressedKeys.has(code) || (note !== undefined && (pressedNotes.has(note) || playbackNotes.has(note)))} target={enabled && targetKeys.has(code)}>
+        <Key key={code} active={pressed} target={held || (enabled && targetKeys.has(code))} data-held={held}>
           {code.replace("Key", "")}
           <small>{note === undefined ? "—" : noteNameWithOctString(note)}</small>
           {note !== undefined && pressCounts[note] > 0 && <span key={pressCounts[note]} className="press-flash" onAnimationEnd={() => setPressCounts((counts) => ({ ...counts, [note]: 0 }))} />}

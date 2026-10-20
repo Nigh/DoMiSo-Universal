@@ -34,6 +34,8 @@ export class Player {
   private _currentTick = 0
   private _isPlaying = false
 
+  isScrubbing = false
+
   disableSeek: boolean = false
   loop: LoopSetting | null = null
 
@@ -74,15 +76,29 @@ export class Player {
       return
     }
     tick = Math.min(Math.max(Math.floor(tick), this.eventSource.startTick ?? 0), this.eventSource.endOfSong)
-    if (this.scheduler) {
-      this.scheduler.seek(tick)
-    }
     this._currentTick = tick
+    if (this.isScrubbing) return
+    this.scheduler?.seek(tick)
 
     if (this.isPlaying) {
       this.allSoundsOff()
     }
 
+    this.sendCurrentStateEvents()
+  }
+
+  beginScrub = () => {
+    if (this.disableSeek) return false
+    this.isScrubbing = true
+    this.syncPosition.cancel()
+    this.allSoundsOff()
+    return true
+  }
+
+  endScrub = () => {
+    if (!this.isScrubbing) return
+    this.isScrubbing = false
+    this.scheduler?.seek(this._currentTick)
     this.sendCurrentStateEvents()
   }
 
@@ -218,7 +234,7 @@ export class Player {
   }
 
   private _onTimer() {
-    if (this.scheduler === null) {
+    if (this.scheduler === null || this.isScrubbing) {
       return
     }
 

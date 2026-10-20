@@ -22,8 +22,8 @@ it("flashes scheduled playback only when due, cancels on stop, and never replays
   vi.useFakeTimers()
   const midiListeners = new Set<(message: { data: Uint8Array }) => void>()
   const synthGroup = new GroupOutput({ activate() {}, sendEvent() {} })
-  const player = { position: 0, isPlaying: true, play: vi.fn(), stop: vi.fn(() => { player.isPlaying = false }) }
-  state.store = { player, songStore: { song: {} }, synthGroup, midiInput: {
+  const player = { position: 0, isPlaying: true, isScrubbing: false, play: vi.fn(), stop: vi.fn(() => { player.isPlaying = false }) }
+  state.store = { player, songStore: { song: { tracks: [] } }, synthGroup, midiInput: {
     on: (_: string, listener: (message: { data: Uint8Array }) => void) => {
       midiListeners.add(listener)
       return () => midiListeners.delete(listener)
@@ -55,6 +55,37 @@ it("flashes scheduled playback only when due, cancels on stop, and never replays
   act(() => host.querySelector(".press-flash")!.dispatchEvent(new Event("webkitAnimationEnd", { bubbles: true })))
   act(() => window.dispatchEvent(new CustomEvent("performance-keyboard-host", { detail: host })))
   expect(flashes()).toEqual([])
+  // Seeking updates duration-based borders without synthesizing a note-on.
+  const tracks = state.store.songStore.song.tracks
+  tracks.push({ id: 1, events: [
+    { type: "channel", subtype: "note", tick: 100, duration: 200, noteNumber: 60 },
+    { type: "channel", subtype: "note", tick: 200, duration: 200, noteNumber: 62 },
+  ] })
+  const held = () => Array.from(host.querySelectorAll('[data-held="true"]')).map((element) => element.textContent)
+  const seek = async (tick: number) => {
+    player.position = tick
+    await act(async () => root.render(<ThemeProvider theme={{ secondaryBackgroundColor: '#222' } as any}><PerformancePanel /></ThemeProvider>))
+  }
+  act(() => midiListeners.forEach((listener) => listener({ data: new Uint8Array([0x80, 64, 0]) })))
+  player.isScrubbing = true
+  await seek(150)
+  expect(held()).toEqual(["AC4"])
+  await seek(250)
+  expect(held()).toEqual(["AC4", "SD4"])
+  await seek(300)
+  expect(held()).toEqual(["SD4"])
+  await seek(-1)
+  expect(held()).toEqual([])
+  expect(flashes()).toEqual([])
+  player.isPlaying = true
+  act(() => {
+    synthGroup.sendEvent(note, 0, performance.now(), 1 as TrackId)
+    vi.advanceTimersByTime(50)
+  })
+  expect(flashes()).toEqual([])
+  player.isScrubbing = false
+  player.isPlaying = false
+  await seek(0)
   // Enabling practice while manually paused must not start the next group.
   state.track.events = [
     { type: "channel", subtype: "note", tick: 0, noteNumber: 60 },

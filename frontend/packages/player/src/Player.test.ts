@@ -27,3 +27,32 @@ describe("pre-roll transport", () => {
     expect(scheduler.readNextEvents(120, 2001)).toEqual([{ event: { tick: 0 }, timestamp: 2001 }])
   })
 })
+
+
+it("scrubs without rescanning MIDI state or advancing playback, then restores state once", () => {
+  vi.useFakeTimers()
+  vi.stubGlobal("window", globalThis)
+  const source = { startTick: -3840, timebase: 480, endOfSong: 100000, getEvents: vi.fn(() => []), getCurrentStateEvents: vi.fn(() => []) }
+  const output = { activate() {}, sendEvent: vi.fn() }
+  const player = new Player(output, source)
+  player.play()
+  expect(player.beginScrub()).toBe(true)
+  const messagesAtStart = output.sendEvent.mock.calls.length
+  for (let tick = 0; tick < 1000; tick++) player.position = tick
+  vi.advanceTimersByTime(500)
+  expect(player.position).toBe(999)
+  expect(source.getEvents).not.toHaveBeenCalled()
+  expect(source.getCurrentStateEvents).not.toHaveBeenCalled()
+  expect(output.sendEvent).toHaveBeenCalledTimes(messagesAtStart)
+  player.endScrub()
+  expect(source.getCurrentStateEvents).toHaveBeenCalledExactlyOnceWith(999)
+  expect(player.isPlaying).toBe(true)
+  vi.advanceTimersByTime(50)
+  expect(source.getEvents).toHaveBeenCalled()
+  player.stop()
+  player.disableSeek = true
+  expect(player.beginScrub()).toBe(false)
+  expect(player.isScrubbing).toBe(false)
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
