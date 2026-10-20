@@ -60,7 +60,7 @@ export const NoteShader = (gl: WebGLRenderingContext) =>
   new Shader(
     gl,
     `
-      precision lowp float;
+      precision highp float;
       attribute vec4 aVertexPosition;
 
       // XYZW -> X, Y, Width, Height
@@ -80,7 +80,7 @@ export const NoteShader = (gl: WebGLRenderingContext) =>
       }
     `,
     `
-      precision lowp float;
+      precision highp float;
 
       uniform vec4 uStrokeColor;
       varying vec4 vBounds;

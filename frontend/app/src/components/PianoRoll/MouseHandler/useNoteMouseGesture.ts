@@ -1,3 +1,4 @@
+import { useEditorMode } from "../../../hooks/useEditorMode"
 import { useCallback, useMemo } from "react"
 import { MouseGesture } from "../../../gesture/MouseGesture"
 import { usePianoRoll } from "../../../hooks/usePianoRoll"
@@ -7,6 +8,7 @@ import { usePencilGesture } from "./usePencilGesture"
 import { useSelectionGesture } from "./useSelectionGesture"
 
 export const useNoteMouseGesture = (): MouseGesture<[], React.MouseEvent> => {
+  const [playbackMode] = useEditorMode()
   const { mouseMode } = usePianoRoll()
   const pencilGesture = usePencilGesture()
   const selectionGesture = useSelectionGesture()
@@ -23,6 +25,7 @@ export const useNoteMouseGesture = (): MouseGesture<[], React.MouseEvent> => {
 
   const getGestureForMouseDown = useCallback(
     (e: MouseEvent) => {
+      if (playbackMode) return dragScrollAction
       // Common Action
 
       // wheel drag to start scrolling
@@ -37,7 +40,7 @@ export const useNoteMouseGesture = (): MouseGesture<[], React.MouseEvent> => {
 
       return currentGesture
     },
-    [changeToolAction, currentGesture, dragScrollAction],
+    [changeToolAction, currentGesture, dragScrollAction, playbackMode],
   )
 
   return {

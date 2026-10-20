@@ -1,3 +1,4 @@
+import { useEditorMode } from "../../hooks/useEditorMode"
 import { NoteLabelSelector } from "./NoteLabelSelector"
 import styled from "@emotion/styled"
 import type { FC } from "react"
@@ -12,6 +13,11 @@ import { PianoRollToolSelector } from "./PianoRollToolSelector"
 import { TrackNameInput } from "./TrackNameInput"
 import { VolumeSlider } from "./VolumeSlider"
 
+const ScrollableToolbar = styled(Toolbar)`
+  overflow-x: auto;
+  flex-shrink: 0;
+`
+
 const Spacer = styled.div`
   width: 1rem;
 `
@@ -21,9 +27,9 @@ const FlexibleSpacer = styled.div`
 `
 
 export const PianoRollToolbar: FC = () => {
+  const [playbackMode] = useEditorMode()
   return (
-    <>
-      <Toolbar>
+      <ScrollableToolbar>
         <TrackListMenuButton />
 
         <TrackNameInput />
@@ -39,13 +45,12 @@ export const PianoRollToolbar: FC = () => {
 
         <FlexibleSpacer />
 
+        <NoteLabelSelector />
         <PianoRollToolSelector />
 
         <QuantizeSelector />
 
-        <AutoScrollButton />
-      </Toolbar>
-      <NoteLabelSelector />
-    </>
+        {!playbackMode && <AutoScrollButton />}
+      </ScrollableToolbar>
   )
 }

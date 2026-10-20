@@ -76,6 +76,8 @@ export class MIDIRecorder {
 
     const tick = Math.floor(this.player.position)
 
+    if (tick < 0) return
+
     const routing = this.midiDeviceStore.midiInputRouting
 
     let tracks

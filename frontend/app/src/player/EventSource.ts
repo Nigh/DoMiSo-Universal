@@ -1,5 +1,6 @@
 import {
   Beat,
+  Measure,
   Range,
   TrackId,
   getStatusEvents,
@@ -19,6 +20,11 @@ export class EventSource implements IEventSource {
     return this.songStore.song.timebase
   }
 
+  get startTick(): number {
+    const { song } = this.songStore
+    return Measure.getPreRollStart(song.measures, song.timebase)
+  }
+
   get endOfSong(): number {
     return this.songStore.song.endOfSong
   }
@@ -36,7 +42,7 @@ export class EventSource implements IEventSource {
 
   getCurrentStateEvents(tick: number): SendableEvent[] {
     return this.songStore.song.tracks.flatMap((t) => {
-      const statusEvents = getStatusEvents(t.events, tick)
+      const statusEvents = getStatusEvents(t.events, Math.max(0, tick))
       return convertTrackEvents(
         statusEvents,
         t.channel,

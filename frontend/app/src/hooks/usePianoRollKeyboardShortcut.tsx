@@ -1,3 +1,4 @@
+import { useEditorMode } from "./useEditorMode"
 import { useMemo } from "react"
 import {
   useNextTrack,
@@ -13,6 +14,7 @@ import { usePianoRoll } from "./usePianoRoll"
 const SCROLL_DELTA = 24
 
 export const usePianoRollKeyboardShortcut = () => {
+  const [playbackMode] = useEditorMode()
   const { setMouseMode, scrollBy } = usePianoRoll()
   const selectAllNotes = useSelectAllNotes()
   const nextTrack = useNextTrack()
@@ -80,6 +82,6 @@ export const usePianoRollKeyboardShortcut = () => {
   )
 
   return useKeyboardShortcut({
-    actions,
+    actions: playbackMode ? actions.filter((a) => !["Digit1", "Digit2", "KeyA"].includes(a.code)) : actions,
   })
 }

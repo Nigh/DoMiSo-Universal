@@ -16,6 +16,7 @@ const ButtonGroup = styled(ToolbarButtonGroup)`
 
 export interface ToolSelectorProps {
   mouseMode: "pencil" | "selection"
+  disabled?: boolean
   onSelect: (mouseMode: "pencil" | "selection") => void
 }
 
@@ -26,10 +27,11 @@ const IconWrapper = styled.div`
 export const ToolSelector: FC<ToolSelectorProps> = ({
   mouseMode,
   onSelect,
+  disabled = false,
 }) => {
   return (
     <ButtonGroup>
-      <ToolbarButtonGroupItem
+      <ToolbarButtonGroupItem disabled={disabled}
         onMouseDown={useCallback(() => onSelect("pencil"), [onSelect])}
         selected={mouseMode === "pencil"}
       >
@@ -52,7 +54,7 @@ export const ToolSelector: FC<ToolSelectorProps> = ({
           </IconWrapper>
         </Tooltip>
       </ToolbarButtonGroupItem>
-      <ToolbarButtonGroupItem
+      <ToolbarButtonGroupItem disabled={disabled}
         onMouseDown={useCallback(() => onSelect("selection"), [onSelect])}
         selected={mouseMode === "selection"}
       >

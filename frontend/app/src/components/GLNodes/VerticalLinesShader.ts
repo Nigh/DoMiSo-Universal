@@ -38,7 +38,7 @@ export const VerticalLinesShader = (gl: WebGL2RenderingContext) =>
   new Shader(
     gl,
     `#version 300 es
-    precision lowp float;
+    precision highp float;
     layout (location = 0) in vec4 position;
     layout (location = 1) in float x;
     uniform mat4 projectionMatrix;
@@ -51,7 +51,7 @@ export const VerticalLinesShader = (gl: WebGL2RenderingContext) =>
     }
     `,
     `#version 300 es
-    precision lowp float;
+    precision highp float;
     uniform vec4 color;
     out vec4 outColor;
 

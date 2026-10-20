@@ -11,6 +11,13 @@ export interface SynthEntry {
 
 // Routing of MIDI events to multiple SynthOutputs and muting of tracks
 export class GroupOutput implements SynthOutput {
+  private playbackListeners = new Set<SynthOutput["sendEvent"]>()
+
+  onPlayback(listener: SynthOutput["sendEvent"]) {
+    this.playbackListeners.add(listener)
+    return () => { this.playbackListeners.delete(listener) }
+  }
+
   outputs: SynthEntry[] = []
   isMetronomeEnabled: boolean = false
   trackMute = TrackMute.empty
@@ -44,6 +51,10 @@ export class GroupOutput implements SynthOutput {
     timestampNow: number,
     trackId?: TrackId,
   ): void {
+    if (trackId !== METRONOME_TRACK_ID &&
+      (trackId === undefined || TrackMute.shouldPlayTrack(trackId)(this.trackMute))) {
+      this.playbackListeners.forEach((listener) => listener(event, delayTime, timestampNow, trackId))
+    }
     this.getOutputs(trackId).forEach((synth) =>
       synth.sendEvent(event, delayTime, timestampNow, trackId),
     )

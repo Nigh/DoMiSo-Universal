@@ -38,7 +38,11 @@ const _ToolbarButtonGroupItem = styled.button`
     border-radius: 0 4px 4px 0;
   }
 
-  &:hover {
+  &:focus-visible { outline: 2px solid var(--color-theme); outline-offset: -2px; }
+
+  &:disabled { opacity: 0.4; cursor: default; }
+
+  &:hover:not(:disabled) {
     background: var(--color-highlight);
   }
 
@@ -51,9 +55,9 @@ const _ToolbarButtonGroupItem = styled.button`
 export const ToolbarButtonGroupItem = forwardRef<
   HTMLButtonElement,
   React.PropsWithChildren<
-    Omit<ComponentProps<typeof _ToolbarButtonGroupItem>, "tabIndex">
+    ComponentProps<typeof _ToolbarButtonGroupItem>
   > & { selected?: boolean }
->(({ children, onMouseDown, selected = false, ...props }, ref) => (
+>(({ children, onMouseDown, selected = false, tabIndex = -1, ...props }, ref) => (
   <_ToolbarButtonGroupItem
     {...props}
     onMouseDown={(e) => {
@@ -61,7 +65,7 @@ export const ToolbarButtonGroupItem = forwardRef<
       onMouseDown?.(e)
     }}
     data-selected={selected}
-    tabIndex={-1}
+    tabIndex={tabIndex}
     ref={ref}
   >
     {children}

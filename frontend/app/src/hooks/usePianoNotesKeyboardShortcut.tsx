@@ -1,3 +1,4 @@
+import { useEditorMode } from "./useEditorMode"
 import { useMemo } from "react"
 import {
   useCopySelection,
@@ -14,6 +15,7 @@ import { useKeyboardShortcut } from "./useKeyboardShortcut"
 import { usePianoRoll } from "./usePianoRoll"
 
 export const usePianoNotesKeyboardShortcut = () => {
+  const [playbackMode] = useEditorMode()
   const selectNextNote = useSelectNextNote()
   const selectPreviousNote = useSelectPreviousNote()
   const copySelection = useCopySelection()
@@ -108,9 +110,9 @@ export const usePianoNotesKeyboardShortcut = () => {
   )
 
   return useKeyboardShortcut({
-    actions,
-    onCopy: copySelection,
-    onPaste: pasteSelection,
-    onCut: cutSelection,
+    actions: playbackMode ? [] : actions,
+    onCopy: playbackMode ? undefined : copySelection,
+    onPaste: playbackMode ? undefined : pasteSelection,
+    onCut: playbackMode ? undefined : cutSelection,
   })
 }

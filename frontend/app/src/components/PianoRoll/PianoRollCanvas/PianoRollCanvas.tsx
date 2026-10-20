@@ -1,3 +1,4 @@
+import { useEditorMode } from "../../../hooks/useEditorMode"
 import { NoteLabels } from "./NoteLabels"
 import { useTheme } from "@emotion/react"
 import { GLCanvas, Transform } from "@ryohey/webgl-react"
@@ -26,6 +27,7 @@ export const PianoRollCanvas: FC<PianoRollCanvasProps> = ({
   width,
   height,
 }) => {
+  const [playbackMode] = useEditorMode()
   const { ghostTrackIds, mouseMode } = usePianoRoll()
   const beats = useBeats()
   const { cursorX, setCanvasWidth, scrollLeft } = useTickScroll()
@@ -44,13 +46,13 @@ export const PianoRollCanvas: FC<PianoRollCanvasProps> = ({
         return
       }
 
-      if (mouseMode === "selection") {
+      if (!playbackMode && mouseMode === "selection") {
         e.stopPropagation()
         onContextMenu(e)
         return
       }
     },
-    [mouseMode, onContextMenu],
+    [mouseMode, onContextMenu, playbackMode],
   )
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export const PianoRollCanvas: FC<PianoRollCanvasProps> = ({
       <GLCanvas
         width={width}
         height={height}
-        cursor={mouseMode === "pencil" ? "auto" : "crosshair"}
+        cursor={playbackMode ? "grab" : mouseMode === "pencil" ? "auto" : "crosshair"}
         style={style}
         onContextMenu={handleContextMenu}
         onMouseDown={mouseHandler.onMouseDown}

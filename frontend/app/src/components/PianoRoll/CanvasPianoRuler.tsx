@@ -2,7 +2,7 @@ import { useTheme } from "@emotion/react"
 import { TrackEventOf } from "@signal-app/core"
 import { LoopSetting } from "@signal-app/player"
 import { TimeSignatureEvent } from "midifile-ts"
-import React, { FC, useCallback, useState } from "react"
+import React, { FC, useCallback, useRef, useState } from "react"
 import { Layout } from "../../Constants"
 import { TickTransform } from "../../entities/transform/TickTransform"
 import { useContextMenu } from "../../hooks/useContextMenu"
@@ -151,6 +151,7 @@ const PianoRuler: FC<PianoRulerProps> = ({
   style,
   className,
 }) => {
+  const dragScrollLeft = useRef(0)
   const theme = useTheme()
   const { onContextMenu, menuProps } = useContextMenu()
   const [timeSignatureDialogState, setTimeSignatureDialogState] =
@@ -170,7 +171,7 @@ const PianoRuler: FC<PianoRulerProps> = ({
     getTick,
   } = useRuler()
 
-  const { canvasWidth: width, scrollLeft, transform } = useTickScroll()
+  const { canvasWidth: width, scrollLeft, transform, startTick } = useTickScroll()
 
   const onClickTimeSignature = useCallback(
     (timeSignature: TrackEventOf<TimeSignatureEvent>, e: React.MouseEvent) => {
@@ -200,10 +201,10 @@ const PianoRuler: FC<PianoRulerProps> = ({
       } else if (e.nativeEvent.altKey) {
         setLoopEnd(quantizedTick)
       } else {
-        setPosition(quantizedTick)
+        setPosition(getTick(e.nativeEvent.offsetX))
       }
     },
-    [getQuantizedTick, setLoopBegin, setLoopEnd, setPosition],
+    [getQuantizedTick, getTick, setLoopBegin, setLoopEnd, setPosition],
   )
 
   const onMouseDown: React.MouseEventHandler<HTMLCanvasElement> = useCallback(
@@ -279,12 +280,15 @@ const PianoRuler: FC<PianoRulerProps> = ({
         height={height}
         onMouseDown={onMouseDown}
         onPointerDown={(e) => {
-          if (e.button === 0) e.currentTarget.setPointerCapture(e.pointerId)
+          if (e.button === 0) {
+            dragScrollLeft.current = scrollLeft
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }
         }}
         onPointerMove={(e) => {
           if (!e.currentTarget.hasPointerCapture(e.pointerId) || !(e.buttons & 1)) return
           const x = e.clientX - e.currentTarget.getBoundingClientRect().left
-          const tick = Math.max(0, getTick(x))
+          const tick = Math.max(startTick, transform.getTick(x + dragScrollLeft.current))
           if (e.ctrlKey) setLoopBegin(tick)
           else if (e.altKey) setLoopEnd(tick)
           else setPosition(tick)

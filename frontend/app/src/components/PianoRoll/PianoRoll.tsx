@@ -1,3 +1,5 @@
+import { useEditorMode } from "../../hooks/useEditorMode"
+import { usePlayer } from "../../hooks/usePlayer"
 import styled from "@emotion/styled"
 import useComponentSize from "@rehooks/component-size"
 import { clamp } from "lodash"
@@ -58,6 +60,8 @@ const PaneContent = styled.div`
 `
 
 const PianoRollWrapper: FC = () => {
+  const [playbackMode] = useEditorMode()
+  const { setPosition } = usePlayer()
   const { transform, scrollBy, selectedTrackId, setActivePane } = usePianoRoll()
   const { isRhythmTrack } = useTrack(selectedTrackId)
   const {
@@ -69,6 +73,8 @@ const PianoRollWrapper: FC = () => {
   } = useKeyScroll()
   const {
     scrollLeft,
+    startTick,
+    canvasWidth,
     contentWidth,
     scaleAroundPointX,
     setAutoScroll,
@@ -77,6 +83,10 @@ const PianoRollWrapper: FC = () => {
   } = useTickScroll()
   const keyboardShortcutProps = usePianoNotesKeyboardShortcut()
   const [bottomPane, setBottomPane] = useState<"keyboard" | "controls">("keyboard")
+
+  const keyboardHostRef = useCallback((element: HTMLDivElement | null) => {
+    window.dispatchEvent(new CustomEvent("performance-keyboard-host", { detail: element }))
+  }, [])
 
   const ref = useRef(null)
   const size = useComponentSize(ref)
@@ -171,7 +181,7 @@ const PianoRollWrapper: FC = () => {
           tabIndex={0}
         >
           <PianoRollStage
-            width={size.width}
+            width={Math.max(0, size.width - keyWidth)}
             height={alphaHeight}
             keyWidth={keyWidth}
           />
@@ -191,25 +201,24 @@ const PianoRollWrapper: FC = () => {
           </PaneTabs>
           <PaneContent
             id="performance-keyboard"
-            ref={(element) => {
-              window.dispatchEvent(new CustomEvent("performance-keyboard-host", { detail: element }))
-            }}
+            ref={keyboardHostRef}
             style={{ display: bottomPane === "keyboard" ? "block" : "none" }}
           />
-          <PaneContent style={{ display: bottomPane === "controls" ? "block" : "none" }}>
+          <PaneContent inert={playbackMode} style={{ display: bottomPane === "controls" ? "block" : "none", pointerEvents: playbackMode ? "none" : undefined }}>
             <ControlPane axisWidth={keyWidth} />
           </PaneContent>
         </Beta>
       </StyledSplitPane>
       <HorizontalScaleScrollBar
-        scrollOffset={scrollLeft}
-        contentLength={contentWidth}
+        scrollOffset={scrollLeft - transform.getX(startTick) + (playbackMode ? canvasWidth / 2 : 0)}
+        contentLength={contentWidth - transform.getX(startTick) + (playbackMode ? canvasWidth / 2 : 0)}
         onScroll={useCallback(
           (v: number) => {
-            setScrollLeftInPixels(v)
+            if (playbackMode) setPosition(startTick + transform.getTick(v))
+            else setScrollLeftInPixels(v + transform.getX(startTick))
             setAutoScroll(false)
           },
-          [setScrollLeftInPixels, setAutoScroll],
+          [setScrollLeftInPixels, setAutoScroll, playbackMode, setPosition, startTick, transform],
         )}
         onClickScaleUp={onClickScaleUpHorizontal}
         onClickScaleDown={onClickScaleDownHorizontal}

@@ -91,7 +91,7 @@ export function useTrackEvents(track: Track | undefined) {
       <T extends TrackEvent>(
         event: Omit<T, "id"> & { subtype?: string },
       ): T | undefined => {
-        if (track) {
+        if (track && event.tick >= 0) {
           return track.addEvent(event)
         }
         return undefined
@@ -101,7 +101,7 @@ export function useTrackEvents(track: Track | undefined) {
     addEvents: useCallback(
       <T extends TrackEvent>(events: Omit<T, "id">[]) => {
         if (track) {
-          return track.addEvents(events)
+          return track.addEvents(events.filter((event) => event.tick >= 0))
         }
       },
       [track],

@@ -1,3 +1,4 @@
+import { useEditorMode } from "./useEditorMode"
 import { TrackId, UNASSIGNED_TRACK_ID } from "@signal-app/core"
 import { reaction } from "mobx"
 import { atom, useAtom, useAtomValue, useSetAtom, useStore } from "jotai"
@@ -132,7 +133,7 @@ export function PianoRollScope({ children }: { children: React.ReactNode }) {
   const { selectedTrackId } = usePianoRoll()
 
   return (
-    <TickScrollProvider scope={tickScrollScope} minScaleX={0.15} maxScaleX={15}>
+    <TickScrollProvider scope={tickScrollScope} minScaleX={0.15} maxScaleX={15} pianoRoll>
       <EventViewProvider trackId={selectedTrackId}>
         <QuantizerProvider scope={quantizerScope} quantize={8}>
           <BeatsProvider scope={beatsScope}>{children}</BeatsProvider>
@@ -143,7 +144,8 @@ export function PianoRollScope({ children }: { children: React.ReactNode }) {
 }
 
 export function usePianoRoll() {
-  const { songStore } = useStores()
+  const { songStore, player } = useStores()
+  const [playbackMode] = useEditorMode()
   const { tickScrollScope } = useContext(PianoRollStoreContext)
   const store = useStore()
 
@@ -224,14 +226,16 @@ export function usePianoRoll() {
     },
     resetSelection: useSetAtom(resetSelectionAtom, { store }),
     get scrollBy() {
-      const { setScrollLeftInPixels } = useTickScroll(tickScrollScope)
+      const { setScrollLeftInPixels, transform } = useTickScroll(tickScrollScope)
       const { setScrollTopInPixels } = useKeyScroll()
       return useCallback(
         (dx: number, dy: number) => {
-          setScrollLeftInPixels((prev) => prev - dx)
+          if (playbackMode) {
+            if (dx !== 0) player.position -= transform.getTick(dx)
+          } else setScrollLeftInPixels((prev) => prev - dx)
           setScrollTopInPixels((prev) => prev - dy)
         },
-        [setScrollLeftInPixels, setScrollTopInPixels],
+        [setScrollLeftInPixels, setScrollTopInPixels, playbackMode, player, transform],
       )
     },
     setNotGhostTrackIds: useSetAtom(notGhostTrackIdsAtom, { store }),

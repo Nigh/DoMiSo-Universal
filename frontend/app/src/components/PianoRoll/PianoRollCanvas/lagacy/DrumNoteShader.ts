@@ -10,7 +10,7 @@ export const DrumNoteShader = (gl: WebGLRenderingContext) =>
   new Shader(
     gl,
     `
-      precision lowp float;
+      precision highp float;
       attribute vec4 aVertexPosition;
 
       // XYZW -> X, Y, Width, Height
@@ -30,7 +30,7 @@ export const DrumNoteShader = (gl: WebGLRenderingContext) =>
       }
     `,
     `
-      precision lowp float;
+      precision highp float;
 
       uniform vec4 uFillColor;
       uniform vec4 uStrokeColor;

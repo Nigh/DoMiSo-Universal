@@ -20,6 +20,7 @@ export const DEFAULT_TEMPO = 120
 
 export interface IEventSource {
   timebase: number
+  readonly startTick?: number
   endOfSong: number
   getEvents(startTick: number, endTick: number): PlayerEvent[]
   getCurrentStateEvents(tick: number): SendableEvent[]
@@ -68,13 +69,11 @@ export class Player {
   }
 
   set position(tick: number) {
-    if (!Number.isInteger(tick)) {
-      console.warn("Player.tick should be an integer", tick)
-    }
+    if (!Number.isFinite(tick)) return
     if (this.disableSeek) {
       return
     }
-    tick = Math.min(Math.max(Math.floor(tick), 0), this.eventSource.endOfSong)
+    tick = Math.min(Math.max(Math.floor(tick), this.eventSource.startTick ?? 0), this.eventSource.endOfSong)
     if (this.scheduler) {
       this.scheduler.seek(tick)
     }

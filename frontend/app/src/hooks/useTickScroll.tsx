@@ -1,3 +1,5 @@
+import { Measure } from "@signal-app/core"
+import { useEditorMode } from "./useEditorMode"
 import { atom, useAtomValue, useSetAtom, useStore } from "jotai"
 import { createScope, ScopeProvider } from "jotai-scope"
 import { Store } from "jotai/vanilla/store"
@@ -25,6 +27,7 @@ export const createTickScrollScope = (parentStore: Store) =>
       minScaleXAtom,
       maxScaleXAtom,
       endTickAtom,
+      startTickAtom,
     ]),
     parentStore,
   })
@@ -36,11 +39,23 @@ export function TickScrollProvider({
   minScaleX,
   maxScaleX,
   children,
+  pianoRoll = false,
 }: {
   scope: TickScrollScopedStore
+  pianoRoll?: boolean
   children: React.ReactNode
 } & TickScrollConfig) {
-  const { endOfSong } = useSong()
+  const { endOfSong, measures, timebase } = useSong()
+  const [playbackMode] = useEditorMode()
+  const centered = pianoRoll && playbackMode
+  const { canvasWidth, transform } = useTickScroll(scope)
+  const setScroll = useSetAtom(scrollLeftTicksAtom, { store: scope })
+  const setStartTick = useSetAtom(startTickAtom, { store: scope })
+  const startTick = Measure.getPreRollStart(measures, timebase)
+  useEffect(() => {
+    setStartTick(startTick)
+    setScroll(startTick)
+  }, [startTick, setStartTick, setScroll])
   const { isPlaying, position } = usePlayer()
   const triggerAutoScroll = useSetAtom(triggerAutoScrollAtom, { store: scope })
   const setEndTick = useSetAtom(endTickAtom, { store: scope })
@@ -56,16 +71,21 @@ export function TickScrollProvider({
   }, [setEndTick, endOfSong])
 
   useEffect(() => {
-    if (isPlaying) {
-      triggerAutoScroll(position)
+    if (centered) setScroll(position - transform.getTick(canvasWidth / 2))
+    else {
+      setScroll((tick) => Math.max(startTick, tick))
+      if (isPlaying) triggerAutoScroll(position)
     }
-  }, [triggerAutoScroll, isPlaying, position])
+  }, [triggerAutoScroll, isPlaying, position, centered, setScroll, transform, canvasWidth, startTick])
 
   return <ScopeProvider scope={scope}>{children}</ScopeProvider>
 }
 
 export function useTickScroll(store = useStore()) {
   return {
+    get startTick() {
+      return useAtomValue(startTickAtom, { store })
+    },
     get autoScroll() {
       return useAtomValue(autoScrollAtom, { store })
     },
@@ -111,6 +131,7 @@ const scrollLeftTicksAtom = atom(0)
 const scaleXAtom = atom(1)
 const canvasWidthAtom = atom(0)
 const autoScrollAtom = atom(true)
+const startTickAtom = atom(0)
 const endTickAtom = atom(0) // bridge to Song.endOfSong
 const minScaleXAtom = atom(0.15)
 const maxScaleXAtom = atom(15)
@@ -120,7 +141,7 @@ const transformAtom = atom(
   (get) => new TickTransform(Layout.pixelsPerTick * get(scaleXAtom)),
 )
 const scrollLeftAtom = atom((get) =>
-  Math.round(get(transformAtom).getX(get(scrollLeftTicksAtom))),
+  get(transformAtom).getX(get(scrollLeftTicksAtom)),
 )
 const contentWidthAtom = atom((get) => {
   const transform = get(transformAtom)
@@ -142,7 +163,7 @@ const setScrollLeftInPixelsAtom = atom(
     const canvasWidth = get(canvasWidthAtom)
     const contentWidth = get(contentWidthAtom)
     const maxX = contentWidth - canvasWidth
-    const scrollLeft = clamp(x, 0, maxX)
+    const scrollLeft = clamp(x, transform.getX(get(startTickAtom)), Math.max(maxX, transform.getX(get(startTickAtom))))
     set(scrollLeftTicksAtom, transform.getTick(scrollLeft))
   },
 )

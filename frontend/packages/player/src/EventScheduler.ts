@@ -57,7 +57,8 @@ export class EventScheduler<E extends SchedulableEvent> {
   }
 
   seek(tick: number) {
-    this._currentTick = this._scheduledTick = Math.max(0, tick)
+    this._currentTick = this._scheduledTick = tick
+    this._prevTime = undefined
   }
 
   readNextEvents(bpm: number, timestamp: number): WithTimestamp<E>[] {

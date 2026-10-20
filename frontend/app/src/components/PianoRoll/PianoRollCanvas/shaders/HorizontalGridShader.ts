@@ -27,7 +27,7 @@ export const HorizontalGridShader = (gl: WebGL2RenderingContext) =>
   new Shader(
     gl,
     `#version 300 es
-      precision lowp float;
+      precision highp float;
 
       uniform mat4 projectionMatrix;
       in vec4 position;
@@ -39,7 +39,7 @@ export const HorizontalGridShader = (gl: WebGL2RenderingContext) =>
       }
     `,
     `#version 300 es
-      precision lowp float;
+      precision highp float;
 
       uniform vec4 color;
       uniform vec4 highlightedColor;
@@ -51,6 +51,7 @@ export const HorizontalGridShader = (gl: WebGL2RenderingContext) =>
       out vec4 outColor;
       
       void main() {
+        outColor = color;
         float screenHeight = height * 128.0;
         float modY = mod(screenHeight - vPosition.y, height * 12.0);
         float lineWidth = 1.0;

@@ -38,7 +38,7 @@ export const HorizontalGridShader = (gl: WebGLRenderingContext) =>
   new Shader(
     gl,
     `
-      precision lowp float;
+      precision highp float;
       attribute vec4 aVertexPosition;
       uniform mat4 uProjectionMatrix;
       varying vec4 vPosition;
@@ -49,7 +49,7 @@ export const HorizontalGridShader = (gl: WebGLRenderingContext) =>
       }
     `,
     `
-      precision lowp float;
+      precision highp float;
       uniform vec4 uColor;
       uniform vec4 uHighlightedColor;
       uniform vec4 uBlackLaneColor;
@@ -61,6 +61,7 @@ export const HorizontalGridShader = (gl: WebGLRenderingContext) =>
       }
       
       void main() {
+        gl_FragColor = vec4(0.0);
         const float eps = 0.1;
         float y = vPosition.y;
         float border = 1.0;

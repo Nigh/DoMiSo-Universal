@@ -1,3 +1,4 @@
+import { useEditorMode } from "../hooks/useEditorMode"
 import {
   NoteEvent,
   PianoNotesClipboardData,
@@ -169,6 +170,7 @@ export const useDeleteSelection = () => {
 
 // Paste notes copied to the current position
 export const usePasteSelection = () => {
+  const [playbackMode] = useEditorMode()
   const { selectedTrackId } = usePianoRoll()
   const { addEvents } = useTrack(selectedTrackId)
   const { position } = usePlayer()
@@ -176,6 +178,7 @@ export const usePasteSelection = () => {
 
   return useCallback(
     async (e?: ClipboardEvent) => {
+      if (position < 0 || playbackMode) return
       const obj = e ? readJSONFromClipboard(e) : await readClipboardData()
       const { data } = PianoNotesClipboardDataSchema.safeParse(obj)
 
@@ -191,7 +194,7 @@ export const usePasteSelection = () => {
       }))
       addEvents(notes)
     },
-    [addEvents, position, pushHistory],
+    [addEvents, position, pushHistory, playbackMode],
   )
 }
 

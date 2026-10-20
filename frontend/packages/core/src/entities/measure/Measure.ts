@@ -19,6 +19,11 @@ export namespace Measure {
     numerator: 4,
   }
 
+  export const getPreRollStart = (measures: Measure[], timebase: number) => {
+    const first = measures[0] ?? defaultValue
+    return -2 * timebase * 4 * first.numerator / first.denominator
+  }
+
   const calculateMBT = (
     measure: Measure,
     tick: number,

@@ -1,3 +1,4 @@
+import { useEditorMode } from "../../hooks/useEditorMode"
 import styled from "@emotion/styled"
 import { isProgramChangeEvent } from "@signal-app/core"
 import { type FC, useMemo } from "react"
@@ -18,6 +19,7 @@ const Container = styled.div`
 `
 
 export const InstrumentLane: FC<InstrumentLaneProps> = ({ width }) => {
+  const [playbackMode] = useEditorMode()
   const events = useEventView()
   const { scrollLeft, transform } = useTickScroll()
 
@@ -31,7 +33,7 @@ export const InstrumentLane: FC<InstrumentLaneProps> = ({ width }) => {
   )
 
   return (
-    <Container style={style}>
+    <Container style={{ ...style, pointerEvents: playbackMode ? "none" : undefined }}>
       <Positioned left={-scrollLeft}>
         {programChangeEvents.map((e) => (
           <InstrumentMark key={e.id} event={e} transform={transform} />

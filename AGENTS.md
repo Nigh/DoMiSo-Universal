@@ -67,7 +67,7 @@ Version 1 remains readable. `midi` and `notation` are each optional, but at leas
 - Practice chords require an exact pressed-note set and at least one fresh press after entering the target group; held notes must never advance through later groups.
 - Editor practice routes mapped PC input through Signal MIDI monitoring/recording and produces local sound.
 - Game practice uses the Windows global hook for display/judgement and does not produce local sound or block the physical key.
-- Wait mode pauses for the target chord; non-wait mode follows the original MIDI timing. The UI shows the current group plus three upcoming groups.
+- Wait mode pauses for the target chord and resumes only a practice-induced wait; mapped notes never resume a manual pause. Non-wait mode follows the original MIDI timing. The UI shows the current group plus three upcoming groups.
 - Auto-play submits one complete scan-code timeline to Go. Go only injects while a profile-whitelisted game is foreground and releases every held key on stop/error/focus loss.
 - Windows hotkeys: `Ctrl+Alt+F8` start/stop, `Ctrl+Alt+F9` emergency stop.
 - Windows alone supports native game monitoring/auto-play. Other platforms retain editor playback and Web MIDI.
@@ -92,7 +92,10 @@ Version 1 remains readable. `midi` and `notation` are each optional, but at leas
 - PC keyboard note events must enter `MIDIInput` so monitor, recorder, practice, and piano-key highlighting observe one event stream.
 - Piano-roll note labels can be hidden or switched between note names, movable-do numbered notation (with octave dots), and active-profile key names in the toolbar. The first DoMiSo tonic initializes display-only `SongStore.labelTonic` on load (DoMiSo C5 = MIDI C4); the toolbar can override it without editing MIDI. Labels use a transparent canvas shared by modern and legacy WebGL rendering.
 - The ruler supports pointer-captured, unsnapped continuous seeking while dragging; Ctrl/Alt drag adjusts loop begin/end.
-- The PC keyboard uses staggered Q/A/Z rows and a retriggered short flash for each note-on, including MIDI monitoring. Active profile/state are shared Jotai atoms for keyboard and roll labels.
+- The roll toolbar uses segmented controls for labels and edit/playback mode. Playback mode disables pencil/selection and note-edit shortcuts; dragging pans vertically and seeks horizontally with a centered playhead, including while paused.
+- Both modes show two empty pre-roll bars (-1 and 0), sized from the initial time signature. Negative transport ticks never shift or add MIDI notes; creation, paste, and recording ignore the pre-roll area.
+- Roll shaders use high-precision coordinates and initialize every fragment output to retain thin lines at large coordinates and HiDPI scales.
+- The PC keyboard uses staggered Q/A/Z rows and a retriggered short flash for each note-on, including MIDI monitoring and scheduled, unmuted playback. Playback display is separate from practice input, cancels pending flashes on stop/seek, and keeps a stable portal host to avoid replaying old flashes. Active profile/state are shared Jotai atoms for keyboard and roll labels.
 - The piano-roll lower pane defaults to the synchronized PC keyboard; Velocity and other MIDI controls remain available on the alternate tab.
 - Custom mapping profiles are Zod-validated, stored in localStorage, and may be imported/exported as JSON.
 

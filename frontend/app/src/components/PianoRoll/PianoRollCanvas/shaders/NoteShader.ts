@@ -76,7 +76,7 @@ export const NoteShader = (gl: WebGL2RenderingContext) =>
   new Shader(
     gl,
     `#version 300 es
-      precision lowp float;
+      precision highp float;
 
       uniform mat4 projectionMatrix;
 
@@ -97,7 +97,7 @@ export const NoteShader = (gl: WebGL2RenderingContext) =>
       }
     `,
     `#version 300 es
-      precision lowp float;
+      precision highp float;
 
       uniform vec4 strokeColor;
       uniform vec4 selectedColor;

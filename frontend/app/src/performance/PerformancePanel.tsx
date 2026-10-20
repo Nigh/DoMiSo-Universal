@@ -61,7 +61,7 @@ const KeyRow = styled.div<{ row: number }>`
   padding-right: ${({ row }) => ["calc(var(--key-unit) * 0.75)", "calc(var(--key-unit) * 0.5)", "0"][row]};
 `
 
-const Key = styled.kbd<{ active: boolean; target: boolean }>`
+const Key = styled("kbd", { shouldForwardProp: (prop) => prop !== "active" && prop !== "target" })<{ active: boolean; target: boolean }>`
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
@@ -116,7 +116,7 @@ function isTypingTarget(target: EventTarget | null) {
 }
 
 export function PerformancePanel() {
-  const { midiInput, player } = useStores()
+  const { midiInput, player, synthGroup } = useStores()
   const { songStore } = useStores()
   const { trackMute } = useTrackMute()
   const { selectedTrack } = usePianoRoll()
@@ -130,9 +130,11 @@ export function PerformancePanel() {
   const [profileJSON, setProfileJSON] = useState(() => JSON.stringify(profile, null, 2))
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set())
   const [pressCounts, setPressCounts] = useState<Record<number, number>>({})
+  const [playbackNotes, setPlaybackNotes] = useState<Set<number>>(new Set())
   const [pressedNotes, setPressedNotes] = useState<Set<number>>(new Set())
   const [targetIndex, setTargetIndex] = useState(0)
   const [autoPlayStatus, setAutoPlayStatus] = useState("")
+  const waitingTickRef = useRef<number | null>(null)
   const passedTickRef = useRef<number | null>(null)
   const pressedSinceTargetRef = useRef<Set<number>>(new Set())
   const [keyboardHost, setKeyboardHost] = useState<HTMLElement | null>(null)
@@ -148,6 +150,7 @@ export function PerformancePanel() {
 
   useEffect(() => {
     if (enabled) return
+    waitingTickRef.current = null
     pressedSinceTargetRef.current.clear()
     setPressedKeys(new Set())
     setPressedNotes(new Set())
@@ -197,8 +200,9 @@ export function PerformancePanel() {
   useEffect(() => {
     if (!enabled) return
     const next = groups.findIndex((group) => group.tick >= position)
-    if (next >= 0 && Math.abs(groups[next].tick - (target?.tick ?? -1)) > 1) setTargetIndex(next)
-  }, [enabled, groups, position, target?.tick])
+    if (next >= 0) setTargetIndex(next)
+    if (waitingTickRef.current !== position) waitingTickRef.current = null
+  }, [enabled, groups, position])
 
   const acceptNote = useCallback((noteNumber: number, down: boolean) => {
     if (down) setPressCounts((counts) => ({ ...counts, [noteNumber]: (counts[noteNumber] ?? 0) + 1 }))
@@ -252,20 +256,61 @@ export function PerformancePanel() {
   }), [acceptNote, midiInput])
 
   useEffect(() => {
+    const timers = new Map<ReturnType<typeof setTimeout>, number>()
+    const sounding = new Map<string, number>()
+    const publish = () => setPlaybackNotes(new Set(sounding.values()))
+    const off = synthGroup.onPlayback((event, delay, timestamp, trackId) => {
+      if (event.type !== "channel") return
+      const channel = event.channel
+      const clearChannel = () => {
+        if (delay <= 0) for (const [timer, ch] of timers) if (ch === channel) { clearTimeout(timer); timers.delete(timer) }
+        for (const key of sounding.keys()) if (key.startsWith(`${channel}:`)) sounding.delete(key)
+        publish()
+      }
+      if (event.subtype === "controller" && [120, 123].includes(event.controllerType)) {
+        if (delay <= 0) clearChannel()
+        else {
+          const timer = setTimeout(() => { timers.delete(timer); clearChannel() }, Math.max(0, timestamp + delay * 1000 - performance.now()))
+          timers.set(timer, channel)
+        }
+        return
+      }
+      // Monitoring/preview already comes through MIDIInput, and must never advance practice.
+      if (trackId === undefined || (event.subtype !== "noteOn" && event.subtype !== "noteOff")) return
+      const timer = setTimeout(() => {
+        timers.delete(timer)
+        if (!player.isPlaying) return
+        const key = `${channel}:${trackId}:${event.noteNumber}`
+        if (event.subtype === "noteOn" && event.velocity > 0) {
+          sounding.set(key, event.noteNumber)
+          setPressCounts((counts) => ({ ...counts, [event.noteNumber]: (counts[event.noteNumber] ?? 0) + 1 }))
+        } else sounding.delete(key)
+        publish()
+      }, Math.max(0, timestamp + delay * 1000 - performance.now()))
+      timers.set(timer, channel)
+    })
+    return () => { off(); timers.forEach((_, timer) => clearTimeout(timer)) }
+  }, [synthGroup, player])
+
+  useEffect(() => {
     pressedSinceTargetRef.current.clear()
   }, [target?.tick])
 
   useEffect(() => {
-    if (!enabled || !target) return
+    if (!enabled || !target || (!player.isPlaying && waitingTickRef.current !== target.tick)) return
     if (matchesFreshChord(target.notes, pressedNotes, pressedSinceTargetRef.current)) {
       passedTickRef.current = target.tick
       setTargetIndex((index) => Math.min(index + 1, groups.length - 1))
-      if (wait && !player.isPlaying) player.play()
+      if (wait && waitingTickRef.current === target.tick) {
+        waitingTickRef.current = null
+        player.play()
+      }
     }
   }, [enabled, groups.length, player, pressedNotes, target, wait])
 
   useEffect(() => {
     if (enabled && wait && target && target.tick !== passedTickRef.current && player.isPlaying && position >= target.tick) {
+      waitingTickRef.current = target.tick
       player.stop()
       player.position = target.tick
     }
@@ -362,10 +407,10 @@ export function PerformancePanel() {
         const mapped = keyToPitch(profile, mappingState, code)
         const note = mapped.type === "note" ? mapped.noteNumber : undefined
         return (
-        <Key key={code} active={pressedKeys.has(code) || (note !== undefined && pressedNotes.has(note))} target={enabled && targetKeys.has(code)}>
+        <Key key={code} active={pressedKeys.has(code) || (note !== undefined && (pressedNotes.has(note) || playbackNotes.has(note)))} target={enabled && targetKeys.has(code)}>
           {code.replace("Key", "")}
           <small>{note === undefined ? "—" : noteNameWithOctString(note)}</small>
-          {note !== undefined && pressCounts[note] > 0 && <span key={pressCounts[note]} className="press-flash" />}
+          {note !== undefined && pressCounts[note] > 0 && <span key={pressCounts[note]} className="press-flash" onAnimationEnd={() => setPressCounts((counts) => ({ ...counts, [note]: 0 }))} />}
         </Key>
       )})}</KeyRow>)}
       <div>

@@ -13,8 +13,10 @@ export namespace BeatWithX {
     scrollLeft: number,
     width: number,
   ): BeatWithX[] => {
+    const first = allMeasures[0] ?? { tick: 0, measure: 0, numerator: 4, denominator: 4 }
+    const preRoll = { ...first, tick: Measure.getPreRollStart(allMeasures, timebase), measure: -2 }
     return Beat.createInRange(
-      allMeasures,
+      [preRoll, ...allMeasures],
       timebase,
       Range.fromLength(transform.getTick(scrollLeft), transform.getTick(width)),
     ).map((b) => ({
