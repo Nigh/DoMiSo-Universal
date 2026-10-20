@@ -1,3 +1,4 @@
+import { NoteLabelSelector } from "./NoteLabelSelector"
 import styled from "@emotion/styled"
 import type { FC } from "react"
 import { AutoScrollButton } from "../Toolbar/AutoScrollButton"
@@ -21,27 +22,30 @@ const FlexibleSpacer = styled.div`
 
 export const PianoRollToolbar: FC = () => {
   return (
-    <Toolbar>
-      <TrackListMenuButton />
+    <>
+      <Toolbar>
+        <TrackListMenuButton />
 
-      <TrackNameInput />
+        <TrackNameInput />
 
-      <EventListButton />
+        <EventListButton />
 
-      <Spacer />
+        <Spacer />
 
-      <InstrumentButton />
+        <InstrumentButton />
 
-      <VolumeSlider />
-      <PanSlider />
+        <VolumeSlider />
+        <PanSlider />
 
-      <FlexibleSpacer />
+        <FlexibleSpacer />
 
-      <PianoRollToolSelector />
+        <PianoRollToolSelector />
 
-      <QuantizeSelector />
+        <QuantizeSelector />
 
-      <AutoScrollButton />
-    </Toolbar>
+        <AutoScrollButton />
+      </Toolbar>
+      <NoteLabelSelector />
+    </>
   )
 }

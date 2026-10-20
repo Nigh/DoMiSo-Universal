@@ -1,8 +1,10 @@
+import { notationTonic } from "../helpers/pianoRollLabels"
 import { Song, emptySong, songFromMidi, songToMidi } from "@signal-app/core"
 import { action, makeObservable, observable } from "mobx"
 
 export class SongStore {
   song: Song = emptySong()
+  labelTonic = 60
   notation = ""
   generatedFromNotation = false
   notationOutOfSync = false
@@ -10,6 +12,8 @@ export class SongStore {
   constructor() {
     makeObservable(this, {
       song: observable.ref,
+      labelTonic: observable,
+      setLabelTonic: action,
       notation: observable,
       generatedFromNotation: observable,
       notationOutOfSync: observable,
@@ -18,6 +22,10 @@ export class SongStore {
       markSaved: action,
       replaceSong: action,
     })
+  }
+
+  setLabelTonic(value: number) {
+    this.labelTonic = Math.max(0, Math.min(127, value))
   }
 
   serialize() {
@@ -31,6 +39,7 @@ export class SongStore {
     this.song = songFromMidi(bytes)
     this.song.isSaved = true
     this.notation = options.notation ?? ""
+    this.labelTonic = notationTonic(this.notation)
     this.generatedFromNotation = options.generatedFromNotation ?? false
     this.notationOutOfSync = options.notationOutOfSync ?? false
   }
@@ -51,6 +60,7 @@ export class SongStore {
 
   replaceSong(song: Song) {
     this.song = song
+    this.labelTonic = 60
     this.notation = ""
     this.generatedFromNotation = false
     this.notationOutOfSync = false

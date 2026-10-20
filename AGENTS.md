@@ -90,6 +90,9 @@ Version 1 remains readable. `midi` and `notation` are each optional, but at leas
 - `ParseTextToMIDI` returns base64 because Wails serializes `[]byte` that way.
 - Signal `RootStore` is the shared song/player/MIDI state. Do not duplicate it into React state or add a message bridge.
 - PC keyboard note events must enter `MIDIInput` so monitor, recorder, practice, and piano-key highlighting observe one event stream.
+- Piano-roll note labels can be hidden or switched between note names, movable-do numbered notation (with octave dots), and active-profile key names in the toolbar. The first DoMiSo tonic initializes display-only `SongStore.labelTonic` on load (DoMiSo C5 = MIDI C4); the toolbar can override it without editing MIDI. Labels use a transparent canvas shared by modern and legacy WebGL rendering.
+- The ruler supports pointer-captured, unsnapped continuous seeking while dragging; Ctrl/Alt drag adjusts loop begin/end.
+- The PC keyboard uses staggered Q/A/Z rows and a retriggered short flash for each note-on, including MIDI monitoring. Active profile/state are shared Jotai atoms for keyboard and roll labels.
 - The piano-roll lower pane defaults to the synchronized PC keyboard; Velocity and other MIDI controls remain available on the alternate tab.
 - Custom mapping profiles are Zod-validated, stored in localStorage, and may be imported/exported as JSON.
 

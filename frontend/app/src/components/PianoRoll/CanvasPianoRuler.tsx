@@ -167,6 +167,7 @@ const PianoRuler: FC<PianoRulerProps> = ({
     clearSelectedTimeSignature,
     updateTimeSignature,
     getQuantizedTick,
+    getTick,
   } = useRuler()
 
   const { canvasWidth: width, scrollLeft, transform } = useTickScroll()
@@ -277,8 +278,22 @@ const PianoRuler: FC<PianoRulerProps> = ({
         width={width}
         height={height}
         onMouseDown={onMouseDown}
+        onPointerDown={(e) => {
+          if (e.button === 0) e.currentTarget.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e) => {
+          if (!e.currentTarget.hasPointerCapture(e.pointerId) || !(e.buttons & 1)) return
+          const x = e.clientX - e.currentTarget.getBoundingClientRect().left
+          const tick = Math.max(0, getTick(x))
+          if (e.ctrlKey) setLoopBegin(tick)
+          else if (e.altKey) setLoopEnd(tick)
+          else setPosition(tick)
+        }}
+        onPointerUp={(e) => {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+        }}
         onContextMenu={(e) => e.preventDefault()}
-        style={style}
+        style={{ ...style, touchAction: "none", cursor: "ew-resize" }}
         className={className}
       />
       <RulerContextMenu {...menuProps} tick={rightClickTick} />

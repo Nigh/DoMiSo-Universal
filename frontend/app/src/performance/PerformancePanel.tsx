@@ -1,7 +1,9 @@
+import { noteNameWithOctString } from "../helpers/noteNumberString"
+import { useAtom } from "jotai"
+import { activeProfileAtom, mappingStateAtom } from "./mappingState"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Dialogs, Events } from "@wailsio/runtime"
 import { keyToPitch, loadProfiles, parseProfile, pitchToKey, saveCustomProfiles } from "../game-mapping"
-import type { GameInstrumentProfile } from "../game-mapping"
 import { usePianoRoll } from "../hooks/usePianoRoll"
 import { useMobxSelector } from "../hooks/useMobxSelector"
 import { useStores } from "../hooks/useStores"
@@ -37,31 +39,55 @@ const Row = styled.div`
 `
 
 const Keyboard = styled.div`
+  container-type: inline-size;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  overflow: auto;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   box-sizing: border-box;
   background: var(--color-editor-background);
 `
 
-const KeyRow = styled.div`
+const KeyRow = styled.div<{ row: number }>`
   display: flex;
-  justify-content: center;
-  gap: 0.4rem;
+  --key-unit: clamp(1.5rem, 10cqw, 3.25rem);
+  gap: 0.25rem;
+  padding-left: ${({ row }) => ["0", "calc(var(--key-unit) * 0.25)", "calc(var(--key-unit) * 0.75)"][row]};
+  padding-right: ${({ row }) => ["calc(var(--key-unit) * 0.75)", "calc(var(--key-unit) * 0.5)", "0"][row]};
 `
 
 const Key = styled.kbd<{ active: boolean; target: boolean }>`
-  min-width: 2.25rem;
-  padding: 0.45rem;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: var(--key-unit);
+  flex-shrink: 0;
+  padding: 0.5rem 0.25rem;
+  box-shadow: 0 3px 0 var(--color-divider);
+  transform: ${({ active }) => active ? "translateY(2px)" : "none"};
   text-align: center;
   border: 1px solid ${({ target }) => target ? "var(--color-theme)" : "var(--color-divider)"};
   border-radius: var(--radius-selector);
   color: ${({ active }) => active ? "var(--color-on-surface)" : "var(--color-text)"};
   background: ${({ active }) => active ? "var(--color-theme)" : "var(--color-background-secondary)"};
-  font: 0.8rem var(--font-mono);
+  font: 600 0.9rem var(--font-mono);
+  small { display: block; margin-top: 0.25rem; font-size: 0.65rem; font-weight: 400; }
+  .press-flash {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: var(--color-text);
+    animation: key-press-flash 220ms ease-out both;
+  }
+  @keyframes key-press-flash { from { opacity: 0.65; } to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .press-flash { animation-timing-function: steps(1, end); }
+  }
 `
 
 const ProfileEditor = styled.textarea`
@@ -99,10 +125,11 @@ export function PerformancePanel() {
   const [environment, setEnvironment] = useState<"editor" | "game">("editor")
   const [wait, setWait] = useState(true)
   const [profiles, setProfiles] = useState(loadProfiles)
-  const [profile, setProfile] = useState<GameInstrumentProfile>(profiles[0])
-  const [mappingState, setMappingState] = useState(profile.initialState)
+  const [profile, setProfile] = useAtom(activeProfileAtom)
+  const [mappingState, setMappingState] = useAtom(mappingStateAtom)
   const [profileJSON, setProfileJSON] = useState(() => JSON.stringify(profile, null, 2))
   const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set())
+  const [pressCounts, setPressCounts] = useState<Record<number, number>>({})
   const [pressedNotes, setPressedNotes] = useState<Set<number>>(new Set())
   const [targetIndex, setTargetIndex] = useState(0)
   const [autoPlayStatus, setAutoPlayStatus] = useState("")
@@ -174,6 +201,7 @@ export function PerformancePanel() {
   }, [enabled, groups, position, target?.tick])
 
   const acceptNote = useCallback((noteNumber: number, down: boolean) => {
+    if (down) setPressCounts((counts) => ({ ...counts, [noteNumber]: (counts[noteNumber] ?? 0) + 1 }))
     setPressedNotes((previous) => {
       const next = new Set(previous)
       if (down) {
@@ -330,11 +358,16 @@ export function PerformancePanel() {
   }))
   const keyboard = keyboardHost && createPortal(
     <Keyboard>
-      {keyboardRows.map((row) => <KeyRow key={row[0]}>{row.map((code) => (
-        <Key key={code} active={pressedKeys.has(code)} target={targetKeys.has(code)}>
+      {keyboardRows.map((row, rowIndex) => <KeyRow row={rowIndex} key={row[0]}>{row.map((code) => {
+        const mapped = keyToPitch(profile, mappingState, code)
+        const note = mapped.type === "note" ? mapped.noteNumber : undefined
+        return (
+        <Key key={code} active={pressedKeys.has(code) || (note !== undefined && pressedNotes.has(note))} target={enabled && targetKeys.has(code)}>
           {code.replace("Key", "")}
+          <small>{note === undefined ? "—" : noteNameWithOctString(note)}</small>
+          {note !== undefined && pressCounts[note] > 0 && <span key={pressCounts[note]} className="press-flash" />}
         </Key>
-      ))}</KeyRow>)}
+      )})}</KeyRow>)}
       <div>
         {upcoming.map((group, index) => (
           <span key={group.tick} style={{ opacity: index ? 0.55 : 1, marginRight: "1rem" }}>

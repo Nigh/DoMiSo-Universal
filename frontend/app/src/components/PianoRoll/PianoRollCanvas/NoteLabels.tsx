@@ -1,88 +1,54 @@
 import { useTheme } from "@emotion/react"
-import { GLNode, useRenderer, useTransform } from "@ryohey/webgl-react"
-import Color from "color"
-import { FC, useEffect, useMemo, useState } from "react"
-import fontAtlas from "../../../assets/font-atlas.png"
-import { Rect } from "../../../entities/geometry/Rect"
-import { colorToVec4 } from "../../../gl/color"
-import { INoteLabelData, NoteLabelShader } from "./shaders/NoteLabelShader"
+import { useAtomValue } from "jotai"
+import { useCallback } from "react"
+import { noteLabel } from "../../../helpers/pianoRollLabels"
+import { useNoteLabels } from "../../../hooks/useNoteLabels"
+import { useNotes } from "../../../hooks/useNotes"
+import { usePianoRoll } from "../../../hooks/usePianoRoll"
+import { useSettings } from "../../../hooks/useSettings"
+import { useTickScroll } from "../../../hooks/useTickScroll"
+import { useKeyScroll } from "../../../hooks/useKeyScroll"
+import { activeProfileAtom, mappingStateAtom } from "../../../performance/mappingState"
+import DrawCanvas from "../../DrawCanvas"
 
-export interface NoteLabelProps {
-  rects: (Rect & INoteLabelData)[]
-  zIndex?: number
-}
-
-export const NoteLabels: FC<NoteLabelProps> = ({ rects, zIndex }) => {
-  const renderer = useRenderer()
-  const [texture, setTexture] = useState<WebGLTexture | null>(null)
-  const projectionMatrix = useTransform()
-
-  useEffect(() => {
-    const gl = renderer.gl
-
-    if (texture || !gl || !(gl instanceof WebGL2RenderingContext)) {
-      return
-    }
-
-    const loadTexture = async () => {
-      const texture = await createTexture(gl, fontAtlas)
-      setTexture(texture)
-    }
-    loadTexture()
-    return () => {
-      if (texture) {
-        gl.deleteTexture(texture)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderer.gl])
-
+// A transparent canvas shares labels across both WebGL renderers and supports Unicode.
+export function NoteLabels({ width, height }: { width: number; height: number }) {
+  const notes = useNotes()
+  const { selectedTrack } = usePianoRoll()
+  const { showNoteLabels } = useSettings()
+  const { mode, tonic } = useNoteLabels()
+  const profile = useAtomValue(activeProfileAtom)
+  const state = useAtomValue(mappingStateAtom)
+  const { scrollLeft } = useTickScroll()
+  const { scrollTop } = useKeyScroll()
   const theme = useTheme()
-  const color = useMemo(
-    () => colorToVec4(Color(theme.onSurfaceColor)),
-    [theme.onSurfaceColor],
-  )
-  const selectedColor = useMemo(
-    () =>
-      theme.isLightContent
-        ? colorToVec4(Color(theme.backgroundColor))
-        : colorToVec4(Color(theme.textColor)),
-    [theme.textColor, theme.backgroundColor, theme.isLightContent],
-  )
-
-  return (
-    <GLNode
-      shader={NoteLabelShader}
-      buffer={rects}
-      zIndex={zIndex}
-      uniforms={{
-        u_font: texture,
-        projectionMatrix,
-        color,
-        selectedColor,
-      }}
-    />
-  )
-}
-
-async function createTexture(gl: WebGL2RenderingContext, src: string) {
-  const image = new Image()
-  image.src = src
-  await image.decode()
-
-  const texture = gl.createTexture()
-  if (!texture) {
-    throw new Error("Failed to create texture")
-  }
-
-  gl.bindTexture(gl.TEXTURE_2D, texture)
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image)
-  gl.generateMipmap(gl.TEXTURE_2D)
-  gl.texParameteri(
-    gl.TEXTURE_2D,
-    gl.TEXTURE_MIN_FILTER,
-    gl.LINEAR_MIPMAP_LINEAR,
-  )
-
-  return texture
+  const draw = useCallback((ctx: CanvasRenderingContext2D) => {
+    ctx.clearRect(0, 0, width, height)
+    if (!showNoteLabels || selectedTrack?.isRhythmTrack) return
+    for (const note of notes) {
+      const x = note.x - scrollLeft
+      const y = note.y - scrollTop
+      if (x + note.width < 0 || x > width || y + note.height < 0 || y > height || note.width < 5) continue
+      const label = noteLabel(note.noteNumber, mode, tonic, profile, state)
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(x + 1, y + 1, Math.max(0, note.width - 2), note.height - 2)
+      ctx.clip()
+      const size = Math.max(7, Math.min(12, note.height * (mode === "number" ? 0.55 : 0.7)))
+      ctx.font = `${size}px ${theme.canvasFont}`
+      ctx.textBaseline = "middle"
+      ctx.fillStyle = note.isSelected ? (theme.isLightContent ? theme.backgroundColor : theme.textColor) : theme.onSurfaceColor
+      ctx.fillText(label.text, x + 3, y + note.height / 2)
+      // Octave dots above/below the scale degree; multiple octaves use horizontal dots.
+      const dots = Math.abs(label.octave)
+      const center = x + 3 + ctx.measureText(label.text).width / 2
+      for (let i = 0; i < dots; i++) {
+        ctx.beginPath()
+        ctx.arc(center + (i - (dots - 1) / 2) * 2.5, y + note.height / 2 + (label.octave > 0 ? -1 : 1) * (size / 2 + 2), 0.8, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.restore()
+    }
+  }, [notes, width, height, showNoteLabels, selectedTrack?.isRhythmTrack, mode, tonic, profile, state, scrollLeft, scrollTop, theme])
+  return <DrawCanvas width={width} height={height} draw={draw} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
 }

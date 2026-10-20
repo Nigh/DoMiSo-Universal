@@ -3,7 +3,6 @@ import React, { FC, useCallback, useMemo } from "react"
 import { useNoteColor } from "../../../hooks/useNoteColor"
 import { PianoNoteItem, useNotes } from "../../../hooks/useNotes"
 import { usePianoRoll } from "../../../hooks/usePianoRoll"
-import { useSettings } from "../../../hooks/useSettings"
 import { useTrack } from "../../../hooks/useTrack"
 import { useAddNoteToSelectionGesture } from "../MouseHandler/gestures/useAddNoteToSelectionGesture"
 import {
@@ -14,7 +13,6 @@ import {
 import { useRemoveNoteFromSelectionGesture } from "../MouseHandler/gestures/useRemoveNoteFromSelectionGesture"
 import { LegacyNotes } from "./lagacy/LegacyNotes"
 import { NoteCircles } from "./NoteCircles"
-import { NoteLabels } from "./NoteLabels"
 import { NoteRectangles } from "./NoteRectangles"
 
 export interface NotesProps {
@@ -48,7 +46,6 @@ const _Notes: FC<NotesContentProps> = ({ zIndex, notes }) => {
   const { isRhythmTrack } = useTrack(selectedTrackId)
   const { borderColor, inactiveColor, activeColor, selectedColor } =
     useNoteColor()
-  const { showNoteLabels } = useSettings()
 
   return (
     <>
@@ -72,7 +69,6 @@ const _Notes: FC<NotesContentProps> = ({ zIndex, notes }) => {
             rects={notes}
             zIndex={zIndex + 0.1}
           />
-          {showNoteLabels && <NoteLabels rects={notes} zIndex={zIndex + 0.2} />}
         </>
       )}
     </>

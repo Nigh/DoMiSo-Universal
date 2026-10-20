@@ -124,6 +124,7 @@ export function useRuler() {
         [updateTimeSignature],
       ),
     ),
+    getTick,
     getQuantizedTick,
   }
 }

@@ -1,3 +1,4 @@
+import { NoteLabels } from "./NoteLabels"
 import { useTheme } from "@emotion/react"
 import { GLCanvas, Transform } from "@ryohey/webgl-react"
 import { FC, MouseEventHandler, useCallback, useEffect, useMemo } from "react"
@@ -83,7 +84,7 @@ export const PianoRollCanvas: FC<PianoRollCanvasProps> = ({
   )
 
   return (
-    <>
+    <div style={{ position: "relative", width, height }}>
       <GLCanvas
         width={width}
         height={height}
@@ -109,7 +110,8 @@ export const PianoRollCanvas: FC<PianoRollCanvasProps> = ({
           <NoteSelection zIndex={4} />
         </Transform>
       </GLCanvas>
+      <NoteLabels width={width} height={height} />
       <PianoSelectionContextMenu {...menuProps} />
-    </>
+    </div>
   )
 }
