@@ -6,6 +6,21 @@ import wails from "@wailsio/runtime/plugins/vite"
 
 export default defineConfig({
   plugins: [
+    {
+      name: "desktop-dev-ready",
+      configureServer(server) {
+        let ready: Promise<void> | undefined
+        server.middlewares.use((req, res, next) => {
+          if (req.url !== "/__dev_ready") return next()
+          // HTML alone is ready before the initial module crawl and dependency optimisation.
+          ready ??= (async () => {
+            await server.environments.client.warmupRequest("/src/index.tsx")
+            await server.environments.client.waitForRequestsIdle()
+          })()
+          ready.then(() => res.end("ready"), next)
+        })
+      },
+    },
     react(),
     wails("../bindings"),
     svgr({
@@ -17,6 +32,11 @@ export default defineConfig({
     }),
   ],
   base: "./",
+  // Concurrent dev servers must not overwrite each other's optimised dependencies.
+  cacheDir: `node_modules/.vite-${process.env.WAILS_VITE_PORT || "default"}`,
+  optimizeDeps: {
+    include: ["@emotion/react/jsx-runtime"],
+  },
   build: {
     rollupOptions: {
       input: {

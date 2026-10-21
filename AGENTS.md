@@ -116,6 +116,8 @@ The root frontend `dev` script forwards CLI arguments to the app workspace. On W
 
 The ignored `frontend/app/public/soundfonts/GeneralUser-GS.sf2` supplies the optional local GM/GS instruments and drums; missing files disable those sounds without blocking startup. Do not commit SoundFonts, node_modules, package dist folders, Wails bindings, or frontend/dist.
 
+Development readiness uses `/__dev_ready`, which warms the app entry and waits for Vite's module crawl before Wails opens the window. An HTTP 200 from the HTML page alone is insufficient. Vite caches are isolated by `WAILS_VITE_PORT` so concurrent dev servers cannot overwrite each other's optimised dependencies; the Emotion JSX runtime is prebundled explicitly.
+
 ## Important Notes
 
 - `free_sheets/` is committed and embedded with `//go:embed all:free_sheets`.
