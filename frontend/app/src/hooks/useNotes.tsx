@@ -13,7 +13,8 @@ export type PianoNoteItem = Rect & {
 
 export function useNotes(): PianoNoteItem[] {
   const { transform, selectedTrack, selectedNoteIds } = usePianoRoll()
-  const noteEvents = useEventView().filter(isNoteEvent)
+  const events = useEventView()
+  const noteEvents = useMemo(() => events.filter(isNoteEvent), [events])
 
   const getRect = useCallback(
     (e: NoteEvent) =>

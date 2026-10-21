@@ -30,6 +30,8 @@ export class EventScheduler<E extends SchedulableEvent> {
   private _currentTick = 0
   private _scheduledTick = 0
   private _prevTime: number | undefined = undefined
+  private playbackBpm = 120
+  private hasWrapped = false
   private _getEvents: (startTick: number, endTick: number) => E[]
   private _createLoopEndEvents: () => Omit<E, "tick">[]
 
@@ -52,6 +54,19 @@ export class EventScheduler<E extends SchedulableEvent> {
     return this._scheduledTick
   }
 
+  // Sample the audible clock, independently of the lookahead scheduling frontier.
+  getPlaybackTick(timestamp: number): number {
+    if (this._prevTime === undefined) return this._currentTick
+    let tick = this._currentTick + this.millisecToTick(Math.max(0, timestamp - this._prevTime), this.playbackBpm)
+    const loop = this.loop
+    if (loop !== null && loop.end > loop.begin) {
+      const length = loop.end - loop.begin
+      if (this.hasWrapped && tick < loop.begin) tick += length
+      if (tick >= loop.end) tick = loop.begin + (tick - loop.begin) % length
+    }
+    return tick
+  }
+
   millisecToTick(ms: number, bpm: number) {
     return (((ms / 1000) * bpm) / 60) * this.timebase
   }
@@ -59,6 +74,7 @@ export class EventScheduler<E extends SchedulableEvent> {
   seek(tick: number) {
     this._currentTick = this._scheduledTick = tick
     this._prevTime = undefined
+    this.hasWrapped = false
   }
 
   readNextEvents(bpm: number, timestamp: number): WithTimestamp<E>[] {
@@ -79,9 +95,10 @@ export class EventScheduler<E extends SchedulableEvent> {
 
     if (this._prevTime === undefined) {
       this._prevTime = timestamp
+      this.playbackBpm = bpm
     }
     const delta = timestamp - this._prevTime
-    const deltaTick = Math.max(0, this.millisecToTick(delta, bpm))
+    const deltaTick = Math.max(0, this.millisecToTick(delta, this.playbackBpm))
     const nowTick = this._currentTick + deltaTick
     const lookAheadTick = this.millisecToTick(this.lookAheadTime, bpm)
 
@@ -90,6 +107,7 @@ export class EventScheduler<E extends SchedulableEvent> {
     const endTick = nowTick + lookAheadTick
 
     this._prevTime = timestamp
+    this.playbackBpm = bpm
 
     if (
       this.loop !== null &&
@@ -102,6 +120,7 @@ export class EventScheduler<E extends SchedulableEvent> {
       const currentTick = loop.begin - (loop.end - nowTick)
       this._currentTick = currentTick
       this._scheduledTick = endTick2
+      this.hasWrapped = true
 
       return [
         ...getEventsInRange(startTick, loop.end, nowTick),

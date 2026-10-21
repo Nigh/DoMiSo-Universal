@@ -11,6 +11,7 @@ import { usePianoRoll } from "../../../hooks/usePianoRoll"
 import { useTickScroll } from "../../../hooks/useTickScroll"
 import { Beats } from "../../GLNodes/Beats"
 import { Cursor } from "../../GLNodes/Cursor"
+import { ReleaseContext } from "../../GLNodes/ReleaseContext"
 import { useNoteMouseGesture } from "../MouseHandler/useNoteMouseGesture"
 import { PianoSelectionContextMenu } from "../PianoSelectionContextMenu"
 import { GhostNotes } from "./GhostNotes"
@@ -97,6 +98,7 @@ export const PianoRollCanvas: FC<PianoRollCanvasProps> = ({
         onMouseMove={mouseHandler.onMouseMove}
         onMouseUp={mouseHandler.onMouseUp}
       >
+        <ReleaseContext />
         <Transform matrix={scrollYMatrix}>
           <Lines zIndex={0} />
         </Transform>

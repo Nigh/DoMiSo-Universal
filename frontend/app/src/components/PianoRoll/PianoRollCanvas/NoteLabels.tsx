@@ -3,28 +3,34 @@ import { useAtomValue } from "jotai"
 import { useCallback } from "react"
 import { noteLabel } from "../../../helpers/pianoRollLabels"
 import { useNoteLabels } from "../../../hooks/useNoteLabels"
-import { useNotes } from "../../../hooks/useNotes"
+import { PianoNoteItem, useNotes } from "../../../hooks/useNotes"
 import { usePianoRoll } from "../../../hooks/usePianoRoll"
 import { useSettings } from "../../../hooks/useSettings"
 import { useTickScroll } from "../../../hooks/useTickScroll"
 import { useKeyScroll } from "../../../hooks/useKeyScroll"
 import { activeProfileAtom, mappingStateAtom } from "../../../performance/mappingState"
 import DrawCanvas from "../../DrawCanvas"
+import { useTrack } from "../../../hooks/useTrack"
 
 // A transparent canvas shares labels across both WebGL renderers and supports Unicode.
 export function NoteLabels({ width, height }: { width: number; height: number }) {
   const notes = useNotes()
-  const { selectedTrack } = usePianoRoll()
+  const { scrollLeft } = useTickScroll()
+  return <NoteLabelsContent notes={notes} width={width} height={height} scrollLeft={scrollLeft} />
+}
+
+export function NoteLabelsContent({ notes, width, height, scrollLeft }: { notes: PianoNoteItem[]; width: number; height: number; scrollLeft: number }) {
+  const { selectedTrackId } = usePianoRoll()
+  const { isRhythmTrack } = useTrack(selectedTrackId)
   const { showNoteLabels } = useSettings()
   const { mode, tonic } = useNoteLabels()
   const profile = useAtomValue(activeProfileAtom)
   const state = useAtomValue(mappingStateAtom)
-  const { scrollLeft } = useTickScroll()
   const { scrollTop } = useKeyScroll()
   const theme = useTheme()
   const draw = useCallback((ctx: CanvasRenderingContext2D) => {
     ctx.clearRect(0, 0, width, height)
-    if (!showNoteLabels || selectedTrack?.isRhythmTrack) return
+    if (!showNoteLabels || isRhythmTrack) return
     for (const note of notes) {
       const x = note.x - scrollLeft
       const y = note.y - scrollTop
@@ -49,6 +55,6 @@ export function NoteLabels({ width, height }: { width: number; height: number })
       }
       ctx.restore()
     }
-  }, [notes, width, height, showNoteLabels, selectedTrack?.isRhythmTrack, mode, tonic, profile, state, scrollLeft, scrollTop, theme])
+  }, [notes, width, height, showNoteLabels, isRhythmTrack, mode, tonic, profile, state, scrollLeft, scrollTop, theme])
   return <DrawCanvas width={width} height={height} draw={draw} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
 }

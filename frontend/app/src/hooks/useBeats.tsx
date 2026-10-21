@@ -5,6 +5,7 @@ import { useEffect } from "react"
 import { BeatWithX } from "../entities/beat/BeatWithX"
 import { useSong } from "./useSong"
 import { useTickScroll } from "./useTickScroll"
+import { useEditorMode } from "./useEditorMode"
 
 export const createBeatsScope = (parentStore: Store) =>
   createScope({
@@ -21,6 +22,10 @@ export function BeatsProvider({
 }) {
   const { scrollLeft, transform, canvasWidth } = useTickScroll()
   const { measures, timebase } = useSong()
+  const [playback] = useEditorMode()
+  const cacheWidth = Math.max(1, canvasWidth)
+  const left = playback ? (Math.floor(scrollLeft / cacheWidth) - 1) * cacheWidth : scrollLeft
+  const width = playback ? cacheWidth * 4 : canvasWidth
 
   const setBeats = useSetAtom(beatsAtom, { store: scope })
 
@@ -30,11 +35,11 @@ export function BeatsProvider({
       measures,
       transform,
       timebase,
-      scrollLeft,
-      canvasWidth,
+      left,
+      width,
     )
     setBeats(beats)
-  }, [scrollLeft, transform, canvasWidth, measures, timebase, setBeats])
+  }, [left, transform, width, measures, timebase, setBeats])
 
   return <ScopeProvider scope={scope}>{children}</ScopeProvider>
 }

@@ -1,5 +1,4 @@
 import range from "lodash/range.js"
-import throttle from "lodash/throttle.js"
 import { AnyEvent, MIDIControlEvents } from "midifile-ts"
 import { computed, makeObservable, observable } from "mobx"
 import { EventScheduler } from "./EventScheduler.js"
@@ -89,8 +88,8 @@ export class Player {
 
   beginScrub = () => {
     if (this.disableSeek) return false
+    this._currentTick = this.samplePlaybackPosition()
     this.isScrubbing = true
-    this.syncPosition.cancel()
     this.allSoundsOff()
     return true
   }
@@ -104,6 +103,11 @@ export class Player {
 
   get position() {
     return this._currentTick
+  }
+
+  samplePlaybackPosition = (timestamp = performance.now()) => {
+    if (!this.isPlaying || this.isScrubbing || this.scheduler === null) return this._currentTick
+    return Math.min(this.eventSource.endOfSong, this.scheduler.getPlaybackTick(timestamp))
   }
 
   get isPlaying() {
@@ -167,6 +171,7 @@ export class Player {
   }
 
   stop = () => {
+    this._currentTick = this.samplePlaybackPosition()
     this.scheduler = null
     this.allSoundsOff()
     this._isPlaying = false
@@ -213,12 +218,6 @@ export class Player {
     this.output.sendEvent(event, delayTime, timestampNow, trackId)
   }
 
-  private syncPosition = throttle(() => {
-    if (this.scheduler !== null) {
-      this._currentTick = this.scheduler.scheduledTick
-    }
-  }, 50)
-
   private applyPlayerEvent(
     e: DistributiveOmit<AnyEvent, "deltaTime" | "channel">,
   ) {
@@ -252,11 +251,10 @@ export class Player {
       }
     })
 
-    if (this.scheduler.scheduledTick >= this.eventSource.endOfSong) {
+    this._currentTick = this.samplePlaybackPosition(timestamp)
+    if (this._currentTick >= this.eventSource.endOfSong) {
       this.stop()
     }
-
-    this.syncPosition()
   }
 
   // convenience methods

@@ -1,138 +1,19 @@
 import { useTheme } from "@emotion/react"
 import { TrackEventOf } from "@signal-app/core"
-import { LoopSetting } from "@signal-app/player"
 import { TimeSignatureEvent } from "midifile-ts"
-import React, { FC, useCallback, useRef, useState } from "react"
+import React, { FC, useCallback, useLayoutEffect, useRef, useState } from "react"
 import { Layout } from "../../Constants"
-import { TickTransform } from "../../entities/transform/TickTransform"
 import { useContextMenu } from "../../hooks/useContextMenu"
 import { usePlayer } from "../../hooks/usePlayer"
-import { RulerBeat, RulerTimeSignature, useRuler } from "../../hooks/useRuler"
+import { useRuler } from "../../hooks/useRuler"
 import { useTickScroll } from "../../hooks/useTickScroll"
-import { Theme } from "../../theme/Theme"
 import DrawCanvas from "../DrawCanvas"
 import { RulerContextMenu } from "./RulerContextMenu"
 import { TimeSignatureDialog } from "./TimeSignatureDialog"
+import { usePlaybackViewport } from "./playback/PlaybackViewport"
+import { PlaybackRuler } from "./playback/PlaybackRuler"
 
-const textPadding = 2
-
-function drawRuler(
-  ctx: CanvasRenderingContext2D,
-  height: number,
-  beats: RulerBeat[],
-  theme: Theme,
-) {
-  ctx.strokeStyle = theme.secondaryTextColor
-  ctx.lineWidth = 1
-  ctx.beginPath()
-
-  beats.forEach(({ beat, x, label }) => {
-    if (beat === 0) {
-      ctx.moveTo(x, height / 2)
-      ctx.lineTo(x, height)
-    } else {
-      ctx.moveTo(x, height * 0.8)
-      ctx.lineTo(x, height)
-    }
-    if (label) {
-      ctx.textBaseline = "top"
-      ctx.font = `12px ${theme.canvasFont}`
-      ctx.fillStyle = theme.secondaryTextColor
-      ctx.fillText(label, x + textPadding, textPadding)
-    }
-  })
-
-  ctx.closePath()
-  ctx.stroke()
-}
-
-function drawLoopPoints(
-  ctx: CanvasRenderingContext2D,
-  loop: LoopSetting,
-  height: number,
-  transform: TickTransform,
-  theme: Theme,
-) {
-  const flagSize = 8
-  ctx.lineWidth = 1
-  ctx.fillStyle = loop.enabled ? theme.themeColor : theme.secondaryTextColor
-  ctx.strokeStyle = loop.enabled ? theme.themeColor : theme.secondaryTextColor
-  ctx.beginPath()
-
-  const beginX = transform.getX(loop.begin)
-  const endX = transform.getX(loop.end)
-
-  if (loop.begin !== null) {
-    const x = beginX
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x, height)
-
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x + flagSize, 0)
-    ctx.lineTo(x, flagSize)
-  }
-
-  if (loop.end !== null) {
-    const x = endX
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x, height)
-
-    ctx.moveTo(x, 0)
-    ctx.lineTo(x - flagSize, 0)
-    ctx.lineTo(x, flagSize)
-  }
-
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
-}
-
-function drawFlag(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  flagSize: number,
-) {
-  ctx.beginPath()
-  ctx.moveTo(x, y)
-  ctx.lineTo(x + width + flagSize, y)
-  ctx.lineTo(x + width, y + height)
-  ctx.lineTo(x, y + height)
-  ctx.lineTo(x, y)
-  ctx.closePath()
-  ctx.fill()
-}
-
-function drawTimeSignatures(
-  ctx: CanvasRenderingContext2D,
-  height: number,
-  events: RulerTimeSignature[],
-  theme: Theme,
-) {
-  ctx.textBaseline = "bottom"
-  ctx.font = `11px ${theme.canvasFont}`
-  events.forEach((e) => {
-    const size = ctx.measureText(e.label)
-    const textHeight =
-      size.actualBoundingBoxAscent + size.actualBoundingBoxDescent
-    ctx.fillStyle = e.isSelected
-      ? theme.themeColor
-      : theme.secondaryBackgroundColor
-    const flagHeight = textHeight + textPadding * 4
-    drawFlag(
-      ctx,
-      e.x,
-      height - flagHeight,
-      size.width + textPadding * 2,
-      flagHeight,
-      textHeight,
-    )
-    ctx.fillStyle = e.isSelected ? theme.onSurfaceColor : theme.textColor
-    ctx.fillText(e.label, e.x + textPadding, height - textPadding)
-  })
-}
+import { drawRuler, drawLoopPoints, drawTimeSignatures } from "./rulerDrawing"
 
 export interface PianoRulerProps {
   onMouseDown?: React.MouseEventHandler<HTMLCanvasElement>
@@ -152,6 +33,8 @@ const PianoRuler: FC<PianoRulerProps> = ({
   className,
 }) => {
   const dragScrollLeft = useRef(0)
+  const playback = usePlaybackViewport()
+  const canvasRef = useRef<DrawCanvas>(null)
   const theme = useTheme()
   const { onContextMenu, menuProps } = useContextMenu()
   const [timeSignatureDialogState, setTimeSignatureDialogState] =
@@ -169,6 +52,7 @@ const PianoRuler: FC<PianoRulerProps> = ({
     updateTimeSignature,
     getQuantizedTick,
     getTick,
+    selectedTimeSignatureEventIds,
   } = useRuler()
 
   const { canvasWidth: width, scrollLeft, transform, startTick } = useTickScroll()
@@ -180,7 +64,7 @@ const PianoRuler: FC<PianoRulerProps> = ({
       } else {
         selectTimeSignature(timeSignature.id)
         if (e.button === 2) {
-          setRightClickTick(getQuantizedTick(e.nativeEvent.offsetX))
+          setRightClickTick(getQuantizedTick(e.nativeEvent.offsetX + (playback ? playback.read().left - scrollLeft : 0)))
           onContextMenu(e)
         }
       }
@@ -190,33 +74,37 @@ const PianoRuler: FC<PianoRulerProps> = ({
       setTimeSignatureDialogState,
       getQuantizedTick,
       onContextMenu,
+      playback,
+      scrollLeft,
     ],
   )
 
   const onClickRuler: React.MouseEventHandler<HTMLCanvasElement> = useCallback(
     (e) => {
-      const quantizedTick = getQuantizedTick(e.nativeEvent.offsetX)
+      const offset = e.nativeEvent.offsetX + (playback ? playback.read().left - scrollLeft : 0)
+      const quantizedTick = getQuantizedTick(offset)
       if (e.nativeEvent.ctrlKey) {
         setLoopBegin(quantizedTick)
       } else if (e.nativeEvent.altKey) {
         setLoopEnd(quantizedTick)
       } else {
-        setPosition(getTick(e.nativeEvent.offsetX))
+        setPosition(getTick(offset))
       }
     },
-    [getQuantizedTick, getTick, setLoopBegin, setLoopEnd, setPosition],
+    [getQuantizedTick, getTick, setLoopBegin, setLoopEnd, setPosition, playback, scrollLeft],
   )
 
   const onMouseDown: React.MouseEventHandler<HTMLCanvasElement> = useCallback(
     (e) => {
-      const timeSignature = timeSignatureHitTest(e.nativeEvent.offsetX)
+      const offset = e.nativeEvent.offsetX + (playback ? playback.read().left - scrollLeft : 0)
+      const timeSignature = timeSignatureHitTest(offset)
 
       if (timeSignature !== undefined) {
         onClickTimeSignature(timeSignature.event, e)
         onClickRuler(e)
       } else {
         if (e.button == 2) {
-          setRightClickTick(getQuantizedTick(e.nativeEvent.offsetX))
+          setRightClickTick(getQuantizedTick(offset))
           onContextMenu(e)
         } else {
           clearSelectedTimeSignature()
@@ -235,6 +123,8 @@ const PianoRuler: FC<PianoRulerProps> = ({
       setRightClickTick,
       onContextMenu,
       _onMouseDown,
+      playback,
+      scrollLeft,
     ],
   )
 
@@ -242,12 +132,12 @@ const PianoRuler: FC<PianoRulerProps> = ({
     (ctx: CanvasRenderingContext2D) => {
       ctx.clearRect(0, 0, width, height)
       ctx.save()
-      ctx.translate(-scrollLeft + 0.5, 0)
-      drawRuler(ctx, height, rulerBeats, theme)
+      ctx.translate(-(playback ? playback.read().left : scrollLeft) + 0.5, 0)
+      if (!playback) drawRuler(ctx, height, rulerBeats, theme)
       if (loop !== null) {
         drawLoopPoints(ctx, loop, height, transform, theme)
       }
-      drawTimeSignatures(ctx, height, timeSignatures, theme)
+      if (!playback) drawTimeSignatures(ctx, height, timeSignatures, theme)
       ctx.restore()
     },
     [
@@ -259,8 +149,11 @@ const PianoRuler: FC<PianoRulerProps> = ({
       timeSignatures,
       loop,
       theme,
+      playback,
     ],
   )
+
+  useLayoutEffect(() => playback?.subscribe(() => canvasRef.current?.drawCanvas()), [playback, draw])
 
   const closeOpenTimeSignatureDialog = useCallback(() => {
     setTimeSignatureDialogState(null)
@@ -273,15 +166,17 @@ const PianoRuler: FC<PianoRulerProps> = ({
   )
 
   return (
-    <>
+    <div style={{ position: "relative", width, height }}>
+      {playback && <PlaybackRuler selected={selectedTimeSignatureEventIds} />}
       <DrawCanvas
+        ref={canvasRef}
         draw={draw}
         width={width}
         height={height}
         onMouseDown={onMouseDown}
         onPointerDown={(e) => {
           if (e.button === 0) {
-            dragScrollLeft.current = scrollLeft
+            dragScrollLeft.current = playback ? playback.read().left : scrollLeft
             e.currentTarget.setPointerCapture(e.pointerId)
           }
         }}
@@ -308,7 +203,7 @@ const PianoRuler: FC<PianoRulerProps> = ({
         onClose={closeOpenTimeSignatureDialog}
         onClickOK={okTimeSignatureDialog}
       />
-    </>
+    </div>
   )
 }
 
