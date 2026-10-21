@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "Example instrument",
+  "samples": [
+    { "file": "C3.wav", "rootKey": 48 },
+    { "file": "C4.wav", "rootKey": 60 },
+    { "file": "C5.wav", "rootKey": 72 }
+  ]
+}

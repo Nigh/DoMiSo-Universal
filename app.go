@@ -134,7 +134,7 @@ func (a *AppService) ParseSheetStats(text string) (SheetStats, error) {
 }
 
 func (a *AppService) ImportSheet(filePath string) (ImportResult, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := boundedRead(filePath, maxSheetBytes)
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -295,7 +295,7 @@ func (a *AppService) FormatDuration(seconds float64) string {
 }
 
 func (a *AppService) ImportGameProfile(filePath string) (string, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := boundedRead(filePath, maxSheetBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to read profile: %w", err)
 	}

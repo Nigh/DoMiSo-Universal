@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"unsafe"
@@ -62,9 +63,8 @@ type lowLevelKeyboardInput struct {
 	ExtraInfo  uintptr
 }
 
-var keyboardHookCallback = windows.NewCallback(func(code int, message uintptr, data uintptr) uintptr {
+var keyboardHookCallback = windows.NewCallback(func(code int, message uintptr, input *lowLevelKeyboardInput) uintptr {
 	if code >= 0 {
-		input := (*lowLevelKeyboardInput)(unsafe.Pointer(data))
 		keyboardMonitor.Lock()
 		processes := append([]string(nil), keyboardMonitor.processes...)
 		keyboardMonitor.Unlock()
@@ -74,9 +74,11 @@ var keyboardHookCallback = windows.NewCallback(func(code int, message uintptr, d
 			if down || up {
 				emitPerformanceEvent("performance:key", map[string]any{"scanCode": input.ScanCode, "down": down})
 			}
+		} else if input.Flags&0x10 == 0 && len(processes) > 0 {
+			emitPerformanceEvent("performance:focus-lost", nil)
 		}
 	}
-	result, _, _ := procCallNextHookEx.Call(0, uintptr(code), message, data)
+	result, _, _ := procCallNextHookEx.Call(0, uintptr(code), message, uintptr(unsafe.Pointer(input)))
 	return result
 })
 
@@ -174,6 +176,8 @@ func platformSetGamePracticeMonitoring(enabled bool, processes []string) error {
 	}
 	ready := make(chan error, 1)
 	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 		threadID, _, _ := procGetCurrentThreadID.Call()
 		hook, _, callErr := procSetWindowsHookEx.Call(13, keyboardHookCallback, 0, 0)
 		if hook == 0 {
@@ -204,6 +208,8 @@ func platformRegisterPerformanceHotkeys() error {
 	hotkeysOnce.Do(func() {
 		ready := make(chan error, 1)
 		go func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
 			if ok, _, err := procRegisterHotKey.Call(0, 1, 0x0003, 0x77); ok == 0 {
 				ready <- fmt.Errorf("register Ctrl+Alt+F8: %w", err)
 				return

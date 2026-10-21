@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type KeyAction struct {
@@ -19,6 +17,7 @@ type performanceManager struct {
 	actions   []KeyAction
 	processes []string
 	cancel    chan struct{}
+	done      chan struct{}
 }
 
 var performance = &performanceManager{}
@@ -56,7 +55,9 @@ func (a *AppService) StartAutoPlay() error {
 	}
 	cancel := make(chan struct{})
 	performance.cancel = cancel
+	performance.done = make(chan struct{})
 	performance.mu.Unlock()
+	emitPerformanceEvent("performance:started", time.Now())
 
 	go performance.run(actions, processes, cancel)
 	return nil
@@ -75,34 +76,67 @@ func (a *AppService) RegisterPerformanceHotkeys() error {
 
 func (m *performanceManager) stop() {
 	m.mu.Lock()
+	done := m.done
+	wasRunning := m.cancel != nil
 	if m.cancel != nil {
-		close(m.cancel)
-		m.cancel = nil
+		select {
+		case <-m.cancel:
+		default:
+			close(m.cancel)
+		}
 	}
 	m.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 	platformReleaseAllKeys()
+	if wasRunning {
+		emitPerformanceEvent("performance:stopped", "stopped")
+	}
 }
 
 func (m *performanceManager) run(actions []KeyAction, processes []string, cancel chan struct{}) {
+	m.mu.Lock()
+	done := m.done
+	m.mu.Unlock()
 	defer func() {
 		platformReleaseAllKeys()
 		m.mu.Lock()
 		if m.cancel == cancel {
 			m.cancel = nil
 		}
+		m.done = nil
 		m.mu.Unlock()
+		close(done)
 	}()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 	started := time.Now()
 	for _, action := range actions {
 		wait := time.Until(started.Add(time.Duration(action.AtMS) * time.Millisecond))
 		if wait > 0 {
 			timer := time.NewTimer(wait)
-			select {
-			case <-cancel:
-				timer.Stop()
-				return
-			case <-timer.C:
+		waiting:
+			for {
+				select {
+				case <-cancel:
+					timer.Stop()
+					return
+				case <-timer.C:
+					break waiting
+				case <-ticker.C:
+					if !platformForegroundAllowed(processes) {
+						timer.Stop()
+						emitPerformanceEvent("performance:stopped", "game-not-foreground")
+						return
+					}
+				}
 			}
+		}
+		select {
+		case <-cancel:
+			return
+		default:
 		}
 		if !platformForegroundAllowed(processes) {
 			emitPerformanceEvent("performance:stopped", "game-not-foreground")
@@ -116,8 +150,16 @@ func (m *performanceManager) run(actions []KeyAction, processes []string, cancel
 	emitPerformanceEvent("performance:stopped", "complete")
 }
 
+type performanceEvent struct {
+	Name string
+	Data any
+}
+
+var performanceEvents = make(chan performanceEvent, 4096)
+
 func emitPerformanceEvent(name string, data any) {
-	if app := application.Get(); app != nil {
-		app.Event.Emit(name, data)
+	select {
+	case performanceEvents <- performanceEvent{name, data}:
+	default:
 	}
 }

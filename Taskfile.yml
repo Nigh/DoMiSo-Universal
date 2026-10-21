@@ -1,37 +1,29 @@
 version: '3'
 
 vars:
-  APP_NAME: "domiso-universal"
-  BIN_DIR: "bin"
-  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
-  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
-
-includes:
-  common: ./build/Taskfile.yml
-  windows: ./build/windows/Taskfile.yml
-  darwin: ./build/darwin/Taskfile.yml
-  linux: ./build/linux/Taskfile.yml
+  EXE: '{{if eq OS "windows"}}.exe{{end}}'
 
 tasks:
-  build:
-    summary: Builds the application
-    cmds:
-      - task: "{{OS}}:build"
-
-  package:
-    summary: Packages a production build of the application
-    cmds:
-      - task: "{{OS}}:package"
-
-  run:
-    summary: Runs the application
-    cmds:
-      - task: "{{OS}}:run"
-
   dev:
-    summary: Runs the application in development mode
+    desc: Run the native desktop app
     cmds:
-      - cmd: powershell -NoProfile -ExecutionPolicy Bypass -File build/dev.ps1
+      - go run .
+  build:
+    desc: Build the native app for this platform
+    cmds:
+      - go build -trimpath -ldflags "-s -w" -o bin/domiso-universal{{.EXE}} .
+  test:
+    cmds:
+      - go test ./...
+      - go vet ./...
+  run:
+    deps: [build]
+    cmds:
+      - ./bin/domiso-universal{{.EXE}}
+  package:
+    deps: [build]
+    cmds:
+      - cmd: powershell -NoProfile -Command "Compress-Archive -LiteralPath bin/domiso-universal.exe -DestinationPath bin/domiso-windows-amd64.zip -Force"
         platforms: [windows]
-      - cmd: wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
-        platforms: [linux, darwin]
+      - cmd: tar -czf bin/domiso-linux-amd64.tar.gz -C bin domiso-universal
+        platforms: [linux]

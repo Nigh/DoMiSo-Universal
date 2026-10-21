@@ -1,0 +1,21 @@
+name: Native desktop
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build -trimpath -o bin/ ./...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: domiso-${{ matrix.os }}
+          path: bin/

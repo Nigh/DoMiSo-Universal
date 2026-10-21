@@ -55,3 +55,7 @@ frontend/public/signal/
 
 # Wails task checksums
 .task/
+
+# Native audio assets and preserved local web workspace
+soundfonts/*.sf2
+.legacy-frontend/
