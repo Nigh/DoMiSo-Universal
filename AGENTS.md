@@ -71,3 +71,12 @@ task package
 `MYGO_FRAME_STATS=all` with the app's `--benchmark` option runs five seconds of silent 100,000-note playback in a requested 1920×1080 window, then exits. `VALIDATION.md` records local checks and their limits.
 
 Legacy frontend sources are recoverable from commit `812e44c` on `feature/unified-signal-editor`. Local ignored `.legacy-frontend/` and `bin/legacy-frontend-812e44c.zip` preserve prior build resources. Signal's MIT license is retained in `LICENSES/Signal-MIT.txt`.
+
+
+## Piano-roll presentation
+
+- The roll displays A0–C8 (MIDI 21–108) only. Keep out-of-range MIDI in the document; exclude it from the roll index and hit testing.
+- Draw white piano keys first and shorter, right-aligned black keys over them. Clamp scrolling and pointer editing to the 88-key range.
+- Imported tracks without notes remain in Song for MIDI event and JSON v3 track-order preservation, but are hidden from the track list. A selected newly created empty editing track stays accessible.
+- Use native segmented switches for editor, snap, note-label and mapping-state choices. Keep file, transport/loop, editing, display, instrument and practice controls grouped; wrap rows and scroll the sidebar.
+- Native palette and control colors follow the dark Xianii tokens from https://github.com/Nigh/xianii-theme, converted from OKLCH to sRGB.

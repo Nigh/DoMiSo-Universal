@@ -30,3 +30,7 @@ Reproduce with `MYGO_FRAME_STATS=all` and `--benchmark`, or `go test -run '^$' -
 ## Remaining manual verification
 
 Physical keyboard-to-speaker latency, live game input/anti-stuck-key behavior, and a normal non-WSLg Linux desktop need manual validation. Windows was locked, so physical GUI clicks and audible checks were replaced by headless interaction tests and window-tree inspection. MIDI/SoundFont advanced SysEx behavior is not guaranteed to match SpessaSynth.
+
+## 2026-10-21 piano-roll and layout update
+
+Go 1.27.1 Linux: full tests, vet and trimpath build passed. Software preview inspected at 1380×900; the 1120×760 view is exercised in the imported-track/range regression check. Native interaction tests cover selection, dragging, keyboard focus and HiDPI. The roll indexes only MIDI 21–108 and hides imported note-free tracks while retaining their MIDI events. This pass did not revalidate physical audio or Windows game injection.

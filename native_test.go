@@ -264,8 +264,8 @@ func TestNativeEditorGestures(t *testing.T) {
 		t.Fatal("paste")
 	}
 	before := len(e.undo)
-	e.rollInput(ui.InputEvent{Kind: ui.InputPointerDown, X: 53, Y: 26 + float32(127-61)*20 - e.scrollY + 5, Button: 0})
-	e.rollInput(ui.InputEvent{Kind: ui.InputPointerMove, X: 173, Y: 26 + float32(127-61)*20 - e.scrollY + 5, Button: 0})
+	e.rollInput(ui.InputEvent{Kind: ui.InputPointerDown, X: 53, Y: 26 + float32(pianoHigh-61)*20 - e.scrollY + 5, Button: 0})
+	e.rollInput(ui.InputEvent{Kind: ui.InputPointerMove, X: 173, Y: 26 + float32(pianoHigh-61)*20 - e.scrollY + 5, Button: 0})
 	e.rollInput(ui.InputEvent{Kind: ui.InputPointerUp})
 	if len(e.undo) != before+1 {
 		t.Fatal("drag did not produce one undo")
@@ -557,5 +557,35 @@ func BenchmarkNativeViewport(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = e.visibleNotes(0, float64(i*60), float64(i*60+4000))
+	}
+}
+
+func TestPianoRangeAndImportedTrackVisibility(t *testing.T) {
+	e := newEditor()
+	song := testSong()
+	metadata := newTrack("conductor-only")
+	song.Tracks = append([]Track{metadata}, song.Tracks...)
+	e.installDocument(Document{Song: song})
+	if e.track != 1 {
+		t.Fatal("metadata track selected")
+	}
+	tester := ui.NewTester(e.view, 1120, 760)
+	if _, ok := tester.Find("1  conductor-only  (0)"); ok {
+		t.Fatal("empty imported track displayed")
+	}
+	e.doc.Song.Tracks[1].Notes = append(e.doc.Song.Tracks[1].Notes,
+		Note{ID: 100, Key: 20, Duration: 480}, Note{ID: 101, Key: 109, Duration: 480})
+	e.rollNotes = nil
+	e.ensureRollIndex()
+	for _, n := range e.rollNotes[1] {
+		if n.Key < pianoLow || n.Key > pianoHigh {
+			t.Fatal("out of piano range indexed")
+		}
+	}
+	if e.keyAtY(-10000) != pianoHigh || e.keyAtY(10000) != pianoLow {
+		t.Fatal("piano input bounds")
+	}
+	if len(e.doc.Song.Tracks) != 2 {
+		t.Fatal("metadata track lost")
 	}
 }
