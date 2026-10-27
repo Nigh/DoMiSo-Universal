@@ -46,6 +46,8 @@ type Editor struct {
 	rollWidth, rollHeight                  float32
 	grid, label, mode                      string
 	tonic                                  float64
+	tonicInput                             string
+	tonicInputKey                          float64
 	loop, follow, recording                bool
 	loopStart, loopEnd                     float64
 	drag                                   string
@@ -726,6 +728,9 @@ func (e *Editor) gridTicks() int64 {
 		return max(1, e.doc.Song.PPQ/4)
 	case "1/8":
 		return max(1, e.doc.Song.PPQ/2)
+	case "1/3", "1/5", "1/6", "1/7":
+		denominator := int64(e.grid[2] - '0')
+		return max(1, (e.doc.Song.PPQ*4+denominator/2)/denominator)
 	case "1/2":
 		return e.doc.Song.PPQ * 2
 	}

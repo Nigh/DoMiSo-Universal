@@ -277,6 +277,24 @@ func TestNativeEditorGestures(t *testing.T) {
 		t.Fatal("playback mode edited notes")
 	}
 }
+func TestNativeRollZoomControls(t *testing.T) {
+	e := newEditor()
+	e.rollWidth, e.rollHeight = 600, 300
+	centerX := (e.rollWidth + rollKeysWidth) / 2
+	beforeTick := e.tickAtX(centerX)
+	horizontal := rollZoomButton(e.rollWidth, 1)
+	e.rollInput(ui.InputEvent{Kind: ui.InputPointerDown, X: horizontal.X + horizontal.W/2, Y: horizontal.Y + horizontal.H/2})
+	if e.zoom <= 0.15 || math.Abs(e.tickAtX(centerX)-beforeTick) > 0.01 || e.drag != "" {
+		t.Fatal("horizontal zoom changed center tick or began timeline seek")
+	}
+	beforeHeight, beforeScroll := e.rowHeight, e.scrollY
+	vertical := rollZoomButton(e.rollWidth, 3)
+	e.rollInput(ui.InputEvent{Kind: ui.InputPointerDown, X: vertical.X + vertical.W/2, Y: vertical.Y + vertical.H/2})
+	if e.rowHeight <= beforeHeight || e.scrollY <= beforeScroll || e.drag != "" {
+		t.Fatal("vertical zoom failed or began timeline seek")
+	}
+}
+
 func TestNativeView(t *testing.T) {
 	e := newEditor()
 	e.doc.Song = testSong()
@@ -343,7 +361,7 @@ func TestNativeUIEditingAndInputFocus(t *testing.T) {
 	e.doc.Song = testSong()
 	e.audio.Configure(e.doc.Song)
 	tester := ui.NewTester(e.view, 1380, 900)
-	roll, ok := tester.Find("钢琴卷帘；双击创建，拖动移动，右边缘改变时长，空白拖动框选")
+	roll, ok := tester.Find("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选")
 	if !ok {
 		t.Fatal("roll missing")
 	}
@@ -391,6 +409,31 @@ func TestNativeUIEditingAndInputFocus(t *testing.T) {
 		t.Fatal("HiDPI render")
 	}
 }
+func TestPhysicalKeyboardRows(t *testing.T) {
+	seen := map[string]bool{}
+	for row, keys := range keyboardRows {
+		var width float32
+		for _, key := range keys {
+			width += key.units
+			if seen[key.code] {
+				t.Fatalf("duplicate keyboard key %s", key.code)
+			}
+			seen[key.code] = true
+		}
+		if width != 15 {
+			t.Fatalf("keyboard row %d width = %g, want 15", row, width)
+		}
+	}
+	if keyboardRows[0][0].label != "`" || keyboardRows[4][len(keyboardRows[4])-1].label != "RCTRL" {
+		t.Fatal("keyboard endpoints missing")
+	}
+	for ch := 'A'; ch <= 'Z'; ch++ {
+		if !seen["Key"+string(ch)] {
+			t.Fatalf("missing physical key %c", ch)
+		}
+	}
+}
+
 func TestLocalSoundFont(t *testing.T) {
 	file := os.Getenv("DOMISO_TEST_SF2")
 	if file == "" {
@@ -508,6 +551,29 @@ func TestNativeMeterAndTonic(t *testing.T) {
 		}
 	}
 }
+func TestNativeToolbarTonicAndGrid(t *testing.T) {
+	for text, want := range map[string]int{"1=C4": 60, "C#4": 61, "1=F5#": 78, "1=d4b": 61, "60": 60, "1=C-1": 0} {
+		if got, ok := tonicKey(text); !ok || got != want {
+			t.Fatalf("tonic %q: %d, %v; want %d", text, got, ok, want)
+		}
+	}
+	for _, text := range []string{"1=H4", "1=C#4b", "128", "1=C99"} {
+		if _, ok := tonicKey(text); ok {
+			t.Fatalf("invalid tonic accepted: %q", text)
+		}
+	}
+	if got := tonicName(60); got != "1=C4" {
+		t.Fatalf("tonic label: %q", got)
+	}
+	e := &Editor{doc: Document{Song: emptySong()}}
+	for grid, want := range map[string]int64{"1/3": 640, "1/5": 384, "1/6": 320, "1/7": 274} {
+		e.grid = grid
+		if got := e.gridTicks(); got != want {
+			t.Fatalf("grid %s: %d; want %d", grid, got, want)
+		}
+	}
+}
+
 func TestContinuousNativeDisplayClock(t *testing.T) {
 	a := newAudioEngine(20)
 	a.Configure(testSong())
