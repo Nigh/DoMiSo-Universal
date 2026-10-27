@@ -611,7 +611,7 @@ func TestNativeToolbarTonicAndGrid(t *testing.T) {
 			t.Fatalf("invalid tonic accepted: %q", text)
 		}
 	}
-	if got := tonicName(60); got != "1=C4" {
+	if got := tonicName(60); got != "C4" {
 		t.Fatalf("tonic label: %q", got)
 	}
 	e := &Editor{doc: Document{Song: emptySong()}}

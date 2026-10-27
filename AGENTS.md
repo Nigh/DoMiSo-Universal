@@ -85,4 +85,4 @@ Legacy frontend sources are recoverable from commit `812e44c` on `feature/unifie
 - Transport and follow controls share the top bar; recording-loop controls are not shown. Without follow, playback pages when the playhead leaves the viewport. Dragging does not disable follow.
 - The PC keyboard draws the full physical range from ` to right Ctrl, with fading press color and a held-key outline.
 - Piano-roll white-key rows use the darker background and black-key rows the lighter surface; horizontal rules remain visible at fractional vertical scroll positions.
-- Song information stays visible without sidebar scrolling. Description is a four-line scrolling text field; the track list shows four rows before scrolling. DoMiSo compatibility text uses at most half the sidebar height.
+- Song settings use one column and stay visible without scrolling. The tonic field shows note names such as C4 without `1=`, but still accepts DoMiSo `1=C4` input. Description is a four-line scrolling text field; the track list shows four rows before scrolling. On short windows, the track and DoMiSo panels scroll together below song settings.
