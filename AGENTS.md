@@ -54,7 +54,7 @@ DoMiSo Universal is a native Go desktop MIDI editor using mygo's GPU UI, without
 
 ## Build and checks
 
-Go 1.27.1 is required. Dependencies are pinned in go.mod. No Node, CGo or Wails CLI is needed.
+Go 1.27.3 is required by mygo v0.7.1. Dependencies are pinned in go.mod. No Node, CGo or Wails CLI is needed.
 
 ```sh
 go run .
@@ -80,3 +80,7 @@ Legacy frontend sources are recoverable from commit `812e44c` on `feature/unifie
 - Imported tracks without notes remain in Song for MIDI event and JSON v3 track-order preservation, but are hidden from the track list. A selected newly created empty editing track stays accessible.
 - Use native segmented switches for editor, snap, note-label and mapping-state choices. Keep file, transport/loop, editing, display, instrument and practice controls grouped; wrap rows and scroll the sidebar.
 - Native palette and control colors follow the dark Xianii tokens from https://github.com/Nigh/xianii-theme, converted from OKLCH to sRGB.
+
+- The roll has a bordered note viewport and a separate top ruler. Horizontal and vertical zoom controls live inside the roll.
+- Transport and follow controls share the compact top bar; recording-loop controls are not shown. DoMiSo text remains an editable compatibility view and fills its available panel height.
+- The PC keyboard draws the full physical range from ` to right Ctrl, with fading press color and a held-key outline.

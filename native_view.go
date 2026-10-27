@@ -4,14 +4,58 @@ import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
 	"math"
+	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // Xianii dark tokens: https://github.com/Nigh/xianii-theme (OKLCH converted to sRGB).
 var palette = struct{ Background, Surface, Grid, Text, Muted, Accent, Selected ui.Color }{ui.Hex("#242424"), ui.Hex("#161616"), ui.Hex("#404040"), ui.Hex("#f2f2f2"), ui.Hex("#b0afb0"), ui.Hex("#ffa1ad"), ui.Hex("#7fcfc4")}
+
+var (
+	playIcon         = ui.MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><path d="M6 3v18l15-9z"/></svg>`))
+	pauseIcon        = ui.MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><path d="M5 3h5v18H5zm9 0h5v18h-5z"/></svg>`))
+	stopIcon         = ui.MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`))
+	tonicNamePattern = regexp.MustCompile(`(?i)^\s*(?:1\s*=\s*)?([a-g])([#b]?)(-?\d+)([#b]?)\s*$`)
+)
+
+func tonicName(key int) string {
+	return fmt.Sprintf("1=%s%d", []string{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}[key%12], key/12-1)
+}
+
+func tonicKey(text string) (int, bool) {
+	text = strings.TrimSpace(text)
+	if key, err := strconv.Atoi(text); err == nil {
+		return key, key >= 0 && key <= 127
+	}
+	match := tonicNamePattern.FindStringSubmatch(text)
+	if match == nil || match[2] != "" && match[4] != "" {
+		return 0, false
+	}
+	octave, err := strconv.Atoi(match[3])
+	if err != nil {
+		return 0, false
+	}
+	note := strings.Index("C D EF G A B", strings.ToUpper(match[1]))
+	if match[2] == "#" || match[4] == "#" {
+		note++
+	} else if strings.EqualFold(match[2], "b") || strings.EqualFold(match[4], "b") {
+		note--
+	}
+	key := (octave+1)*12 + note
+	return key, key >= 0 && key <= 127
+}
+
+func iconButton(c *ui.Context, icon *ui.SVG, label string, fn func()) {
+	if ui.Button(c, "").Size(36, 32).Label(label).Tooltip(label).Children(func() {
+		ui.Icon(c, icon).Size(18, 18)
+	}).Clicked() {
+		fn()
+	}
+}
 
 func button(c *ui.Context, label string, fn func()) {
 	if ui.Button(c, label).Clicked() {
@@ -43,65 +87,56 @@ func (e *Editor) view(c *ui.Context) {
 		c.After(time.Second / 60)
 	}
 	ui.Column(c).Fill().Gap(6).Padding(8).Children(func() {
-		ui.Row(c).Gap(6).Wrap().Children(func() {
-			ui.Text(c, "DoMiSo").FontSize(22).Bold()
-			button(c, "打开", e.open)
-			button(c, "保存", func() { e.save(false) })
-			button(c, "另存为", func() { e.save(true) })
-			button(c, "导出 MIDI", func() { e.export(true) })
-			button(c, "导出原文", func() { e.export(false) })
-		})
-		ui.Row(c).Gap(8).Wrap().Children(func() {
-			ui.Text(c, "播放控制").Bold()
-			play := "播放"
-			if playing {
-				play = "暂停"
-			}
-			button(c, play, e.togglePlay)
-			button(c, "停止", e.stop)
-			if ui.Checkbox(c, &e.recording, "录音").Changed() {
-				if e.recording {
-					e.checkpoint()
-					e.audio.Play(true)
+		ui.Row(c).Gap(4).Children(func() {
+			ui.Row(c).Width(370).Gap(6).Children(func() {
+				choice(c, &e.mode, "编辑", "播放")
+				ui.Text(c, "DoMiSo").FontSize(18).Bold()
+				button(c, "撤销", func() { e.history(false) })
+				button(c, "重做", func() { e.history(true) })
+			})
+			ui.Row(c).Grow(1).Gap(6).Children(func() {
+				ui.Spacer(c)
+				if playing {
+					iconButton(c, pauseIcon, "暂停播放", e.togglePlay)
 				} else {
-					e.finishRecording()
+					iconButton(c, playIcon, "播放", e.togglePlay)
 				}
-			}
-			ui.Textf(c, "tick %.0f", tick).Width(95)
-			if ui.Checkbox(c, &e.loop, "循环").Changed() {
-				e.audio.SetLoop(e.loop, e.loopStart, e.loopEnd)
-			}
-			ui.Text(c, "起点")
-			if ui.NumberInput(c, &e.loopStart, 0, float64(e.doc.Song.End()), float64(e.doc.Song.PPQ)).Width(140).Label("循环起点").Changed() {
-				e.audio.SetLoop(e.loop, e.loopStart, e.loopEnd)
-			}
-			ui.Text(c, "终点")
-			if ui.NumberInput(c, &e.loopEnd, 1, float64(e.doc.Song.End()+e.doc.Song.PPQ*16), float64(e.doc.Song.PPQ)).Width(140).Label("循环终点").Changed() {
-				e.audio.SetLoop(e.loop, e.loopStart, e.loopEnd)
-			}
+				iconButton(c, stopIcon, "停止播放", e.stop)
+				ui.Checkbox(c, &e.follow, "跟随")
+				ui.Textf(c, "%.0f", tick).Width(65).Label("播放位置 tick")
+				ui.Spacer(c)
+			})
+			ui.Row(c).Width(370).Gap(5).Children(func() {
+				button(c, "打开", e.open)
+				button(c, "保存", func() { e.save(false) })
+				button(c, "另存为", func() { e.save(true) })
+				button(c, "导出 MIDI", func() { e.export(true) })
+				button(c, "导出原文", func() { e.export(false) })
+			})
 		})
-		ui.Row(c).Gap(6).Wrap().Children(func() {
-			button(c, "撤销", func() { e.history(false) })
-			button(c, "重做", func() { e.history(true) })
-			choice(c, &e.mode, "编辑", "播放")
+		ui.Row(c).Gap(8).Children(func() {
 			ui.Text(c, "吸附")
-			choice(c, &e.grid, "自由", "1/16", "1/8", "1/4", "1/2")
-		})
-		ui.Row(c).Gap(8).Wrap().Children(func() {
-			ui.Text(c, "显示").Bold()
+			choice(c, &e.grid, "自由", "1/16", "1/8", "1/7", "1/6", "1/5", "1/4", "1/3", "1/2")
+			ui.Spacer(c)
 			ui.Text(c, "标签")
 			choice(c, &e.label, "隐藏", "音名", "简谱", "按键")
 			ui.Text(c, "主音")
-			ui.NumberInput(c, &e.tonic, 0, 127, 1).Width(140).Label("简谱主音 MIDI")
-			button(c, "−", func() { e.zoom = max(0.02, e.zoom/1.3) })
-			button(c, "+", func() { e.zoom = min(4, e.zoom*1.3) })
-			ui.Checkbox(c, &e.follow, "跟随")
+			if e.tonicInput == "" && e.tonicInputKey == 0 || e.tonicInputKey != e.tonic {
+				e.tonicInput = tonicName(int(e.tonic))
+				e.tonicInputKey = e.tonic
+			}
+			if ui.TextInput(c, &e.tonicInput).Width(90).Label("简谱主音，音名或 MIDI 数值").Placeholder("1=C4").Changed() {
+				if key, ok := tonicKey(e.tonicInput); ok {
+					e.tonic = float64(key)
+					e.tonicInputKey = e.tonic
+				}
+			}
 		})
 		ui.Row(c).Grow(1).MinHeight(200).Gap(8).AlignItems(ui.Stretch).Children(func() {
-			ui.Scroll(c).Width(270).Disabled(e.busy).Children(func() { ui.Column(c).Gap(8).Children(func() { e.sidebar(c) }) })
+			ui.Column(c).Width(270).Gap(8).Disabled(e.busy).Children(func() { e.sidebar(c) })
 			ui.Column(c).Grow(1).Gap(5).Children(func() {
 				e.trackBar(c)
-				roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().Label("钢琴卷帘；双击创建，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput).Draw(func(p *ui.Painter, r ui.Rect) { e.rollWidth, e.rollHeight = r.W, r.H; e.drawRoll(p, r, tick, playing) })
+				roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput).Draw(func(p *ui.Painter, r ui.Rect) { e.rollWidth, e.rollHeight = r.W, r.H; e.drawRoll(p, r, tick, playing) })
 				e.buildFocus = e.buildFocus || roll.Focused()
 				e.keyboard(c, tick)
 			})
@@ -124,7 +159,7 @@ func (e *Editor) view(c *ui.Context) {
 	}
 	e.inputFocused = e.buildFocus
 }
-func (e *Editor) sidebar(c *ui.Context) {
+func (e *Editor) sidebarInfo(c *ui.Context) {
 	ui.Text(c, "曲谱").Bold()
 	names := []string{"选择内置曲谱…"}
 	for _, s := range e.sheets {
@@ -223,8 +258,14 @@ func (e *Editor) sidebar(c *ui.Context) {
 		button(c, "↑", func() { e.moveTrack(-1) })
 		button(c, "↓", func() { e.moveTrack(1) })
 	})
+}
+
+func (e *Editor) sidebar(c *ui.Context) {
+	ui.Scroll(c).Height(270).Children(func() {
+		ui.Column(c).Gap(8).Children(func() { e.sidebarInfo(c) })
+	})
 	ui.Text(c, "DoMiSo 文本").Bold()
-	if ui.TextArea(c, &e.doc.Notation).Height(150).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
+	if ui.TextArea(c, &e.doc.Notation).Grow(1).MinHeight(120).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
 		e.changed(false)
 		e.doc.OutOfSync = e.doc.Notation != ""
 	}
@@ -416,103 +457,111 @@ func (e *Editor) performanceBar(c *ui.Context) {
 		}
 	})
 }
+
+const (
+	rollKeysWidth         float32 = 52
+	rollHeaderHeight      float32 = 26
+	rollZoomControlsWidth float32 = 120
+)
+
 func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) {
 	e.ensureRollIndex()
 	e.ensureLabelCache()
-	e.scrollY = max(0, min(max(0, 88*e.rowHeight-r.H+26), e.scrollY))
+	e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-r.H+rollHeaderHeight), e.scrollY))
 	e.scrollX = max(-float32(e.doc.Song.BarTicks()*2)*e.zoom, e.scrollX)
 	if e.follow && playing && e.drag == "" {
-		e.scrollX = float32(tick)*e.zoom - (r.W-52)/2
+		e.scrollX = float32(tick)*e.zoom - (r.W-rollKeysWidth)/2
 	}
 	p.Fill(r, palette.Background, 0)
 	p.Clip(r, 0, func() {
-		for key := pianoLow; key <= pianoHigh; key++ {
-			y := r.Y + 26 + float32(pianoHigh-key)*e.rowHeight - e.scrollY
-			if y+e.rowHeight < r.Y+26 || y > r.Y+r.H {
-				continue
-			}
-			shade := palette.Surface
-			if isBlack(key) {
-				shade = palette.Background
-			}
-			p.Fill(ui.Rect{X: r.X, Y: y, W: r.W, H: e.rowHeight}, shade, 0)
-			p.Line(r.X, y, r.X+r.W, y, 1, palette.Grid)
-
-		}
-		// Grid density follows zoom; drawing is bounded by the visible viewport.
-		step := e.doc.Song.PPQ
-		for float32(step)*e.zoom < 35 {
-			step *= 2
-		}
-		left := int64(math.Floor(float64(e.scrollX/e.zoom)/float64(step))) * step
-		for t := left; float32(t)*e.zoom-e.scrollX < r.W; t += step {
-			x := r.X + 52 + float32(t)*e.zoom - e.scrollX
-			if x < r.X+52 {
-				continue
-			}
-			p.Line(x, r.Y+26, x, r.Y+r.H, 1, palette.Grid)
-		}
-		barsInRange(e.meters, int64(e.scrollX/e.zoom), int64((e.scrollX+r.W)/e.zoom), func(tick, bar int64) {
-			x := r.X + 52 + float32(tick)*e.zoom - e.scrollX
-			if x >= r.X+52 {
-				p.Line(x, r.Y+26, x, r.Y+r.H, 1, palette.Muted)
-				p.Text(x+3, r.Y+4, fmt.Sprint(bar), 11, palette.Muted)
-			}
-		})
-		drawNote := func(n Note, ti int, color ui.Color) {
-			if n.Key < pianoLow || n.Key > pianoHigh {
-				return
-			}
-			nr := e.noteRect(n)
-			nr.X += r.X
-			nr.Y += r.Y
-			if nr.X+nr.W < r.X+52 || nr.X > r.X+r.W || nr.Y+nr.H < r.Y+26 || nr.Y > r.Y+r.H {
-				return
-			}
-			if ti == e.track && e.selected[n.ID] {
-				color = palette.Selected
-			}
-			p.Fill(nr, color, 3)
-			if ti == e.track && nr.W > 18 && e.label != "隐藏" {
-				text := e.labelCache[n.Key]
-				p.Clip(nr, 0, func() { p.Text(max(nr.X+4, r.X+54), nr.Y+2, text, 11, palette.Background) })
-			}
-		}
-		for ti := range e.doc.Song.Tracks {
-			color := palette.Accent
-			if ti != e.track {
-				color = ui.RGBA(145, 130, 180, 0.25)
-			}
-			for _, n := range e.visibleNotes(ti, float64(e.scrollX/e.zoom), float64((e.scrollX+r.W)/e.zoom)) {
-				if ti == e.track && e.dragBefore != nil && e.selected[n.ID] {
+		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: rollHeaderHeight}, palette.Surface, 0)
+		p.Clip(ui.Rect{X: r.X + rollKeysWidth, Y: r.Y + rollHeaderHeight, W: max(0, r.W-rollKeysWidth), H: max(0, r.H-rollHeaderHeight)}, 0, func() {
+			for key := pianoLow; key <= pianoHigh; key++ {
+				y := r.Y + rollHeaderHeight + float32(pianoHigh-key)*e.rowHeight - e.scrollY
+				if y+e.rowHeight < r.Y+rollHeaderHeight || y > r.Y+r.H {
 					continue
 				}
-				drawNote(n, ti, color)
+				shade := palette.Surface
+				if isBlack(key) {
+					shade = palette.Background
+				}
+				p.Fill(ui.Rect{X: r.X + rollKeysWidth, Y: y, W: r.W - rollKeysWidth, H: e.rowHeight}, shade, 0)
+				p.Line(r.X+rollKeysWidth, y, r.X+r.W, y, 1, palette.Grid)
 			}
-		}
-		if e.dragBefore != nil {
-			for _, i := range e.dragIndices {
-				drawNote(e.doc.Song.Tracks[e.track].Notes[i], e.track, palette.Selected)
+			// Grid density follows zoom; drawing is bounded by the visible viewport.
+			step := e.doc.Song.PPQ
+			for float32(step)*e.zoom < 35 {
+				step *= 2
 			}
-		}
-		for key, start := range e.recordStart {
-			drawNote(Note{Tick: start, Duration: max(1, int64(tick)-start), Key: uint8(key)}, e.track, palette.Selected)
-		}
-		if e.drag == "box" {
-			x, y := min(e.dragX, e.boxX), min(e.dragY, e.boxY)
-			p.Stroke(ui.Rect{X: r.X + x, Y: r.Y + y, W: absf(e.boxX - e.dragX), H: absf(e.boxY - e.dragY)}, palette.Selected, 0, 1)
-		}
-		x := r.X + 52 + float32(tick)*e.zoom - e.scrollX
-		if x >= r.X+52 {
-			p.Line(x, r.Y, x, r.Y+r.H, 2, palette.Selected)
-		}
-		p.Clip(ui.Rect{X: r.X, Y: r.Y + 26, W: 52, H: max(0, r.H-26)}, 0, func() {
-			p.Fill(ui.Rect{X: r.X, Y: r.Y + 26, W: 52, H: r.H - 26}, palette.Surface, 0)
+			left := int64(math.Floor(float64(e.scrollX/e.zoom)/float64(step))) * step
+			for t := left; float32(t)*e.zoom-e.scrollX < r.W; t += step {
+				x := r.X + rollKeysWidth + float32(t)*e.zoom - e.scrollX
+				if x < r.X+rollKeysWidth {
+					continue
+				}
+				p.Line(x, r.Y+rollHeaderHeight, x, r.Y+r.H, 1, palette.Grid)
+			}
+			barsInRange(e.meters, int64(e.scrollX/e.zoom), int64((e.scrollX+r.W)/e.zoom), func(tick, bar int64) {
+				x := r.X + rollKeysWidth + float32(tick)*e.zoom - e.scrollX
+				if x >= r.X+rollKeysWidth {
+					p.Line(x, r.Y+rollHeaderHeight, x, r.Y+r.H, 1, palette.Muted)
+				}
+			})
+			drawNote := func(n Note, ti int, color ui.Color) {
+				if n.Key < pianoLow || n.Key > pianoHigh {
+					return
+				}
+				nr := e.noteRect(n)
+				nr.X += r.X
+				nr.Y += r.Y
+				if nr.X+nr.W < r.X+rollKeysWidth || nr.X > r.X+r.W || nr.Y+nr.H < r.Y+rollHeaderHeight || nr.Y > r.Y+r.H {
+					return
+				}
+				if ti == e.track && e.selected[n.ID] {
+					color = palette.Selected
+				}
+				p.Fill(nr, color, 3)
+				if ti == e.track && nr.W > 18 && e.label != "隐藏" {
+					text := e.labelCache[n.Key]
+					p.Clip(nr, 0, func() { p.Text(max(nr.X+4, r.X+rollKeysWidth+2), nr.Y+2, text, 11, palette.Background) })
+				}
+			}
+			for ti := range e.doc.Song.Tracks {
+				color := palette.Accent
+				if ti != e.track {
+					color = ui.RGBA(145, 130, 180, 0.25)
+				}
+				for _, n := range e.visibleNotes(ti, float64(e.scrollX/e.zoom), float64((e.scrollX+r.W)/e.zoom)) {
+					if ti == e.track && e.dragBefore != nil && e.selected[n.ID] {
+						continue
+					}
+					drawNote(n, ti, color)
+				}
+			}
+			if e.dragBefore != nil {
+				for _, i := range e.dragIndices {
+					drawNote(e.doc.Song.Tracks[e.track].Notes[i], e.track, palette.Selected)
+				}
+			}
+			for key, start := range e.recordStart {
+				drawNote(Note{Tick: start, Duration: max(1, int64(tick)-start), Key: uint8(key)}, e.track, palette.Selected)
+			}
+			if e.drag == "box" {
+				x, y := min(e.dragX, e.boxX), min(e.dragY, e.boxY)
+				p.Stroke(ui.Rect{X: r.X + x, Y: r.Y + y, W: absf(e.boxX - e.dragX), H: absf(e.boxY - e.dragY)}, palette.Selected, 0, 1)
+			}
+			x := r.X + rollKeysWidth + float32(tick)*e.zoom - e.scrollX
+			if x >= r.X+rollKeysWidth {
+				p.Line(x, r.Y+rollHeaderHeight, x, r.Y+r.H, 2, palette.Selected)
+			}
+		})
+		p.Clip(ui.Rect{X: r.X, Y: r.Y + rollHeaderHeight, W: rollKeysWidth, H: max(0, r.H-rollHeaderHeight)}, 0, func() {
+			p.Fill(ui.Rect{X: r.X, Y: r.Y + rollHeaderHeight, W: rollKeysWidth, H: r.H - rollHeaderHeight}, palette.Surface, 0)
 			for key := pianoLow; key <= pianoHigh; key++ {
 				if isBlack(key) {
 					continue
 				}
-				y := r.Y + 26 + float32(pianoHigh-key)*e.rowHeight - e.scrollY
+				y := r.Y + rollHeaderHeight + float32(pianoHigh-key)*e.rowHeight - e.scrollY
 				top, bottom := y, y+e.rowHeight
 				if key < pianoHigh && isBlack(key+1) {
 					top -= e.rowHeight / 2
@@ -520,7 +569,7 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 				if key > pianoLow && isBlack(key-1) {
 					bottom += e.rowHeight / 2
 				}
-				rect := ui.Rect{X: r.X, Y: top, W: 52, H: bottom - top}
+				rect := ui.Rect{X: r.X, Y: top, W: rollKeysWidth, H: bottom - top}
 				p.Fill(rect, palette.Text, 0)
 				p.Stroke(rect, palette.Grid, 0, 1)
 				if key%12 == 0 || key == pianoLow {
@@ -531,13 +580,65 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 				if !isBlack(key) {
 					continue
 				}
-				y := r.Y + 26 + float32(pianoHigh-key)*e.rowHeight - e.scrollY
+				y := r.Y + rollHeaderHeight + float32(pianoHigh-key)*e.rowHeight - e.scrollY
 				p.Fill(ui.Rect{X: r.X + 20, Y: y + 1, W: 32, H: e.rowHeight - 2}, palette.Background, 1)
 			}
 		})
-		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: 52, H: 26}, palette.Surface, 0)
+		controlsVisible := r.W >= rollKeysWidth+rollZoomControlsWidth
+		labelWidth := max(0, r.W-rollKeysWidth)
+		if controlsVisible {
+			labelWidth -= rollZoomControlsWidth
+		}
+		p.Clip(ui.Rect{X: r.X + rollKeysWidth, Y: r.Y, W: labelWidth, H: rollHeaderHeight}, 0, func() {
+			barsInRange(e.meters, int64(e.scrollX/e.zoom), int64((e.scrollX+r.W)/e.zoom), func(tick, bar int64) {
+				x := r.X + rollKeysWidth + float32(tick)*e.zoom - e.scrollX
+				if x >= r.X+rollKeysWidth {
+					p.Text(x+3, r.Y+4, fmt.Sprint(bar), 11, palette.Muted)
+				}
+			})
+		})
+		x := r.X + rollKeysWidth + float32(tick)*e.zoom - e.scrollX
+		if x >= r.X+rollKeysWidth {
+			p.Line(x, r.Y, x, r.Y+rollHeaderHeight, 2, palette.Selected)
+		}
+		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: rollKeysWidth, H: rollHeaderHeight}, palette.Surface, 0)
+		p.Line(r.X, r.Y+rollHeaderHeight, r.X+r.W, r.Y+rollHeaderHeight, 1, palette.Muted)
+		p.Line(r.X+rollKeysWidth, r.Y, r.X+rollKeysWidth, r.Y+r.H, 1, palette.Muted)
+		if controlsVisible {
+			for i, label := range [...]string{"横−", "横+", "纵−", "纵+"} {
+				button := rollZoomButton(r.W, i)
+				button.X += r.X
+				button.Y += r.Y
+				p.Fill(button, palette.Background, 2)
+				p.Stroke(button, palette.Grid, 2, 1)
+				p.Text(button.X+2, button.Y+3, label, 11, palette.Text)
+			}
+		}
+		p.Stroke(r, palette.Grid, 0, 1)
 	})
 }
+func rollZoomButton(width float32, index int) ui.Rect {
+	return ui.Rect{X: width - rollZoomControlsWidth + float32(index)*29, Y: 2, W: 27, H: 22}
+}
+
+func (e *Editor) changeRollZoom(index int) {
+	factor := float32(1.3)
+	if index%2 == 0 {
+		factor = 1 / factor
+	}
+	if index < 2 {
+		next := max(float32(0.02), min(float32(4), e.zoom*factor))
+		center := (e.rollWidth - rollKeysWidth) / 2
+		e.scrollX = (e.scrollX+center)*next/e.zoom - center
+		e.zoom = next
+		return
+	}
+	next := max(float32(10), min(float32(40), e.rowHeight*factor))
+	center := (e.rollHeight - rollHeaderHeight) / 2
+	e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*next-e.rollHeight+rollHeaderHeight), (e.scrollY+center)*next/e.rowHeight-center))
+	e.rowHeight = next
+}
+
 func isBlack(k int) bool {
 	switch k % 12 {
 	case 1, 3, 6, 8, 10:
@@ -552,11 +653,11 @@ func absf(v float32) float32 {
 	return v
 }
 func (e *Editor) noteRect(n Note) ui.Rect {
-	return ui.Rect{X: 52 + float32(n.Tick)*e.zoom - e.scrollX, Y: 26 + float32(pianoHigh-int(n.Key))*e.rowHeight - e.scrollY + 1, W: max(3, float32(n.Duration)*e.zoom), H: e.rowHeight - 2}
+	return ui.Rect{X: rollKeysWidth + float32(n.Tick)*e.zoom - e.scrollX, Y: rollHeaderHeight + float32(pianoHigh-int(n.Key))*e.rowHeight - e.scrollY + 1, W: max(3, float32(n.Duration)*e.zoom), H: e.rowHeight - 2}
 }
-func (e *Editor) tickAtX(x float32) float64 { return float64((x - 52 + e.scrollX) / e.zoom) }
+func (e *Editor) tickAtX(x float32) float64 { return float64((x - rollKeysWidth + e.scrollX) / e.zoom) }
 func (e *Editor) keyAtY(y float32) int {
-	return max(pianoLow, min(pianoHigh, pianoHigh-int((y-26+e.scrollY)/e.rowHeight)))
+	return max(pianoLow, min(pianoHigh, pianoHigh-int((y-rollHeaderHeight+e.scrollY)/e.rowHeight)))
 }
 func (e *Editor) rollInput(ev ui.InputEvent) bool {
 	if e.busy {
@@ -572,13 +673,22 @@ func (e *Editor) rollInput(ev ui.InputEvent) bool {
 		} else if ev.Mods&ui.Shift != 0 {
 			e.scrollX += ev.DY
 		} else {
-			e.scrollY = max(0, min(88*e.rowHeight-e.rollHeight+26, e.scrollY+ev.DY))
+			e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-e.rollHeight+rollHeaderHeight), e.scrollY+ev.DY))
 		}
 		return true
 	case ui.InputPointerDown:
+		if ev.Button == 0 && ev.Y >= 2 && ev.Y < rollHeaderHeight-2 && e.rollWidth >= rollKeysWidth+rollZoomControlsWidth {
+			for i := range 4 {
+				button := rollZoomButton(e.rollWidth, i)
+				if ev.X >= button.X && ev.X < button.X+button.W && ev.Y >= button.Y && ev.Y < button.Y+button.H {
+					e.changeRollZoom(i)
+					return true
+				}
+			}
+		}
 		e.dragX, e.dragY, e.dragScrollX, e.dragScrollY = ev.X, ev.Y, e.scrollX, e.scrollY
 		e.dragTick = e.tickAtX(ev.X)
-		if ev.Y < 26 {
+		if ev.Y < rollHeaderHeight {
 			e.drag = "seek"
 			if ev.Mods&ui.Ctrl != 0 {
 				e.drag = "loopBegin"
@@ -593,7 +703,7 @@ func (e *Editor) rollInput(ev ui.InputEvent) bool {
 			e.audio.SetLoop(e.loop, e.loopStart, e.loopEnd)
 			return true
 		}
-		if ev.X < 52 {
+		if ev.X < rollKeysWidth {
 			return true
 		}
 		if e.mode == "播放" || ev.Button == 2 {
@@ -680,9 +790,9 @@ func (e *Editor) rollInput(ev ui.InputEvent) bool {
 			e.seek(e.tickAtX(ev.X))
 		case "pan":
 			e.scrollX = e.dragScrollX - (ev.X - e.dragX)
-			e.scrollY = max(0, min(max(0, 88*e.rowHeight-e.rollHeight+26), e.dragScrollY-(ev.Y-e.dragY)))
+			e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-e.rollHeight+rollHeaderHeight), e.dragScrollY-(ev.Y-e.dragY)))
 			if e.mode == "播放" {
-				e.seek(e.tickAtX(e.rollWidth/2 + 26))
+				e.seek(e.tickAtX((e.rollWidth + rollKeysWidth) / 2))
 			}
 		case "box":
 			e.boxX, e.boxY = ev.X, ev.Y
@@ -811,6 +921,21 @@ func (e *Editor) keyInput(ev ui.InputEvent) bool {
 	}
 	return false
 }
+
+// The five rows use ANSI key widths; codes match profile binding names.
+type keyboardKey struct {
+	label, code string
+	units       float32
+}
+
+var keyboardRows = [5][]keyboardKey{
+	{{"`", "Backquote", 1}, {"1", "Digit1", 1}, {"2", "Digit2", 1}, {"3", "Digit3", 1}, {"4", "Digit4", 1}, {"5", "Digit5", 1}, {"6", "Digit6", 1}, {"7", "Digit7", 1}, {"8", "Digit8", 1}, {"9", "Digit9", 1}, {"0", "Digit0", 1}, {"-", "Minus", 1}, {"=", "Equal", 1}, {"Back", "Backspace", 2}},
+	{{"Tab", "Tab", 1.5}, {"Q", "KeyQ", 1}, {"W", "KeyW", 1}, {"E", "KeyE", 1}, {"R", "KeyR", 1}, {"T", "KeyT", 1}, {"Y", "KeyY", 1}, {"U", "KeyU", 1}, {"I", "KeyI", 1}, {"O", "KeyO", 1}, {"P", "KeyP", 1}, {"[", "BracketLeft", 1}, {"]", "BracketRight", 1}, {"\\", "Backslash", 1.5}},
+	{{"Caps", "CapsLock", 1.75}, {"A", "KeyA", 1}, {"S", "KeyS", 1}, {"D", "KeyD", 1}, {"F", "KeyF", 1}, {"G", "KeyG", 1}, {"H", "KeyH", 1}, {"J", "KeyJ", 1}, {"K", "KeyK", 1}, {"L", "KeyL", 1}, {";", "Semicolon", 1}, {"'", "Quote", 1}, {"Enter", "Enter", 2.25}},
+	{{"LSHIFT", "ShiftLeft", 2.25}, {"Z", "KeyZ", 1}, {"X", "KeyX", 1}, {"C", "KeyC", 1}, {"V", "KeyV", 1}, {"B", "KeyB", 1}, {"N", "KeyN", 1}, {"M", "KeyM", 1}, {",", "Comma", 1}, {".", "Period", 1}, {"/", "Slash", 1}, {"RSHIFT", "ShiftRight", 2.75}},
+	{{"LCTRL", "ControlLeft", 1.25}, {"LWIN", "MetaLeft", 1.25}, {"LALT", "AltLeft", 1.25}, {"Space", "Space", 6.25}, {"RALT", "AltRight", 1.25}, {"RWIN", "MetaRight", 1.25}, {"Menu", "ContextMenu", 1.25}, {"RCTRL", "ControlRight", 1.25}},
+}
+
 func (e *Editor) keyboard(c *ui.Context, tick float64) {
 	e.ensureRollIndex()
 	_, playing := e.transportState()
@@ -837,27 +962,40 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 		}
 	}
 	e.displayTick, e.displayPlaying = tick, playing
-	keyboard := ui.Box(c).Height(116).Focusable().HandleInput(func(ev ui.InputEvent) bool { return e.keyInput(ev) }).Draw(func(painter *ui.Painter, r ui.Rect) {
-		rows := []string{"QWERTYU", "ASDFGHJ", "ZXCVBNM"}
-		width := min(float32(65), (r.W-40)/7)
-		for row, keys := range rows {
-			for col, k := range keys {
-				code := "Key" + string(k)
-				n, _, ok := p.Binding(e.state, code)
-				if !ok {
-					continue
-				}
-				rect := ui.Rect{X: r.X + float32(col)*width + float32(row)*10, Y: r.Y + float32(row)*37, W: width - 5, H: 33}
+	keyboard := ui.Box(c).Height(156).Focusable().HandleInput(func(ev ui.InputEvent) bool { return e.keyInput(ev) }).Draw(func(painter *ui.Painter, r ui.Rect) {
+		width := min(float32(52), (r.W-8)/15)
+		now := time.Now()
+		for row, keys := range keyboardRows {
+			x := r.X + 4
+			for _, key := range keys {
+				rect := ui.Rect{X: x + 2, Y: r.Y + 3 + float32(row)*30, W: key.units*width - 4, H: 26}
+				x += key.units * width
+				n, _, bound := p.Binding(e.state, key.code)
 				color := palette.Surface
-				if e.pressed[n] || active[n] {
-					color = palette.Accent
-				}
-				if flash, ok := e.flashes[n]; ok && time.Since(flash) < 120*time.Millisecond {
-					color = palette.Selected
-					c.After(time.Second / 60)
+				if bound {
+					if flash, ok := e.flashes[n]; ok {
+						if elapsed := now.Sub(flash); elapsed >= 0 && elapsed < 350*time.Millisecond {
+							color = color.Mix(palette.Selected, 1-float32(elapsed)/350e6)
+							c.After(time.Second / 60)
+						}
+					}
 				}
 				painter.Fill(rect, color, 4)
-				painter.Text(rect.X+8, rect.Y+7, fmt.Sprintf("%c  %s", k, noteLabel(n, "简谱", int(e.tonic), p, e.state)), 12, palette.Text)
+				outline := palette.Grid
+				stroke := float32(1)
+				if bound && (e.pressed[n] || active[n]) {
+					outline = palette.Accent
+					stroke = 2
+				}
+				painter.Stroke(rect, outline, 4, stroke)
+				size := float32(11)
+				if key.units <= 1.25 && len(key.label) > 3 {
+					size = 8
+				}
+				painter.Text(rect.X+5, rect.Y+2, key.label, size, palette.Text)
+				if bound && rect.W >= 27 {
+					painter.Text(rect.X+5, rect.Y+13, noteLabel(n, "简谱", int(e.tonic), p, e.state), 10, palette.Muted)
+				}
 			}
 		}
 	})
