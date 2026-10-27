@@ -27,9 +27,10 @@ type sampleData struct {
 	PCM            []float32
 }
 type loadedInstrument struct {
-	Config  Instrument
-	Samples []sampleData
-	Synth   *meltysynth.Synthesizer
+	Config      Instrument
+	Samples     []sampleData
+	Synth       *meltysynth.Synthesizer
+	PresetNames []string
 }
 type sampleVoice struct {
 	Track, Key      int
@@ -107,6 +108,14 @@ func loadInstrument(cfg Instrument, remaining int64) (*loadedInstrument, int64, 
 		sf, e := meltysynth.NewSoundFont(bytes.NewReader(b))
 		if e != nil {
 			return nil, 0, e
+		}
+		if cfg.Preset != nil && !soundFontHasPreset(sf, *cfg.Preset) {
+			return nil, 0, fmt.Errorf("SoundFont 没有 bank %d / program %d", cfg.Preset.Bank, cfg.Preset.Program)
+		}
+		in.PresetNames = make([]string, len(sf.Presets)+1)
+		in.PresetNames[0] = "跟随 MIDI 音色"
+		for i, p := range sf.Presets {
+			in.PresetNames[i+1] = fmt.Sprintf("Bank %d / Program %d · %s", p.BankNumber, p.PatchNumber, p.Name)
 		}
 		s, e := meltysynth.NewSynthesizer(sf, meltysynth.NewSynthesizerSettings(sampleRate))
 		in.Synth = s
@@ -243,6 +252,9 @@ func (a *AudioEngine) rebuild(s Song) {
 		if s.Audible(i) {
 			a.volumes[i] = t.Settings.Volume
 		}
+		if i < len(a.instruments) && a.instruments[i].Config.Kind == t.Settings.Instrument.Kind && a.instruments[i].Config.File == t.Settings.Instrument.File {
+			a.instruments[i].Config.Preset = t.Settings.Instrument.Preset
+		}
 		for _, e := range t.Events {
 			a.events = append(a.events, scheduledEvent{int64(math.Round(secondsAt(a.tempos, s.PPQ, float64(e.Tick)) * sampleRate)), i, e.Data})
 		}
@@ -271,6 +283,7 @@ func (a *AudioEngine) seekLocked(tick float64) {
 	for _, in := range a.instruments {
 		if in.Synth != nil {
 			in.Synth.Reset()
+			applySoundFontPreset(in)
 		}
 	}
 	for i := 0; i < a.next; i++ {
@@ -402,6 +415,10 @@ func (a *AudioEngine) sendLocked(track int, m smf.Message) {
 	}
 	in := a.instruments[track]
 	if in.Synth != nil {
+		// Track selection overrides MIDI patch messages without changing stored events.
+		if in.Config.Preset != nil && (m[0]&0xf0 == 0xc0 || m[0]&0xf0 == 0xb0 && (m[1] == 0 || m[1] == 32)) {
+			return
+		}
 		d2 := int32(0)
 		if len(m) > 2 {
 			d2 = int32(m[2])

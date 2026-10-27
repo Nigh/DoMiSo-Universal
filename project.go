@@ -126,6 +126,9 @@ func validateSettings(st TrackSettings) error {
 	if st.Instrument.RootKey < 0 || st.Instrument.RootKey > 127 {
 		return fmt.Errorf("无效采样音高")
 	}
+	if p := st.Instrument.Preset; p != nil && (p.Bank < 0 || p.Bank > 65535 || p.Program < 0 || p.Program > 127) {
+		return fmt.Errorf("无效 SoundFont bank/program")
+	}
 	return nil
 }
 func atomicWrite(path string, b []byte) error {

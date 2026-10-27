@@ -20,11 +20,16 @@ type MIDIEvent struct {
 	Tick int64
 	Data smf.Message
 }
+type SoundFontPreset struct {
+	Bank    int `json:"bank"`
+	Program int `json:"program"`
+}
 type Instrument struct {
-	Kind    string `json:"kind,omitempty"`
-	File    string `json:"file,omitempty"`
-	RootKey int    `json:"rootKey,omitempty"`
-	Gated   bool   `json:"gated,omitempty"`
+	Kind    string           `json:"kind,omitempty"`
+	File    string           `json:"file,omitempty"`
+	RootKey int              `json:"rootKey,omitempty"`
+	Gated   bool             `json:"gated,omitempty"`
+	Preset  *SoundFontPreset `json:"preset,omitempty"`
 }
 type TrackSettings struct {
 	Instrument Instrument `json:"instrument"`

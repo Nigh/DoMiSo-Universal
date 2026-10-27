@@ -18,7 +18,6 @@ var palette = struct{ Background, Surface, Grid, Text, Muted, Accent, Selected u
 var (
 	playIcon         = ui.MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><path d="M6 3v18l15-9z"/></svg>`))
 	pauseIcon        = ui.MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><path d="M5 3h5v18H5zm9 0h5v18h-5z"/></svg>`))
-	stopIcon         = ui.MustParseSVG([]byte(`<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>`))
 	tonicNamePattern = regexp.MustCompile(`(?i)^\s*(?:1\s*=\s*)?([a-g])([#b]?)(-?\d+)([#b]?)\s*$`)
 )
 
@@ -99,22 +98,17 @@ func (e *Editor) view(c *ui.Context) {
 			button(c, "撤销", func() { e.history(false) })
 			button(c, "重做", func() { e.history(true) })
 		})
-		ui.Row(c).Gap(6).Children(func() {
-			ui.Spacer(c)
-			if playing {
-				iconButton(c, pauseIcon, "暂停播放", e.togglePlay)
-			} else {
-				iconButton(c, playIcon, "播放", e.togglePlay)
-			}
-			iconButton(c, stopIcon, "停止播放", e.stop)
-			ui.Checkbox(c, &e.follow, "跟随")
-			ui.Textf(c, "%.0f", tick).Width(65).Label("播放位置 tick")
-			ui.Spacer(c)
-		})
-		ui.Row(c).Children(func() {
-			ui.Spacer(c)
-			choice(c, &e.mode, "编辑", "播放")
-			ui.Spacer(c)
+		ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
+			ui.Column(c).Grow(1).Gap(6).Children(func() {
+				ui.Row(c).Children(func() {
+					previous := e.mode
+					if choice(c, &e.mode, "编辑", "播放", "练习") {
+						e.changeMode(previous)
+					}
+				})
+				e.performanceBar(c)
+			})
+			ui.Column(c).Width(380).Gap(4).Children(func() { e.songInfo(c) })
 		})
 		ui.Row(c).Gap(8).Wrap().Children(func() {
 			ui.Text(c, "吸附")
@@ -129,16 +123,27 @@ func (e *Editor) view(c *ui.Context) {
 				e.message = "缓冲设置重启后生效"
 			}
 		})
+		if e.mode == "练习" {
+			ui.Column(c).Width(380).Disabled(e.busy).Children(func() { e.sidebarInfo(c) })
+		}
 		ui.Row(c).Grow(1).MinHeight(200).Gap(8).AlignItems(ui.Stretch).Children(func() {
-			ui.Column(c).Width(380).Gap(8).Disabled(e.busy).Children(func() { e.sidebar(c) })
+			if e.mode != "练习" {
+				ui.Column(c).Width(380).Gap(8).Disabled(e.busy).Children(func() { e.sidebar(c) })
+			}
 			ui.Column(c).Grow(1).Gap(5).Children(func() {
-				e.trackBar(c)
-				roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput).Draw(func(p *ui.Painter, r ui.Rect) { e.rollWidth, e.rollHeight = r.W, r.H; e.drawRoll(p, r, tick, playing) })
-				e.buildFocus = e.buildFocus || roll.Focused()
-				e.keyboard(c, tick)
+				if e.mode == "练习" {
+					e.practiceTimeline(c, tick, playing)
+					e.keyboard(c, tick)
+					e.practiceControls(c)
+				} else {
+					e.trackBar(c)
+					roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput).Draw(func(p *ui.Painter, r ui.Rect) { e.rollWidth, e.rollHeight = r.W, r.H; e.drawRoll(p, r, tick, playing) })
+					e.buildFocus = e.buildFocus || roll.Focused()
+					e.keyboard(c, tick)
+				}
 			})
 		})
-		e.performanceBar(c)
+		e.transportBar(c, tick, playing)
 		state := ""
 		if e.doc.Dirty {
 			state = "● 未保存  "
@@ -191,50 +196,58 @@ func (e *Editor) sidebarInfo(c *ui.Context) {
 			}
 		}
 	})
-	if ui.TextInput(c, &e.doc.Meta.Title).Label("标题").Placeholder("标题").Changed() {
-		e.changed(false)
+}
+
+func (e *Editor) songInfo(c *ui.Context) {
+	ui.Text(c, "曲谱信息").Bold()
+	if e.doc.Meta.Title != "" {
+		ui.Text(c, e.doc.Meta.Title)
 	}
-	if ui.TextInput(c, &e.doc.Meta.Composer).Label("记谱 / 作曲").Placeholder("记谱 / 作曲").Changed() {
-		e.changed(false)
+	if e.doc.Meta.Composer != "" {
+		ui.Text(c, "记谱 / 作曲："+e.doc.Meta.Composer)
 	}
-	if ui.TextInput(c, &e.doc.Meta.Arranger).Label("编曲").Placeholder("编曲").Changed() {
-		e.changed(false)
+	if e.doc.Meta.Arranger != "" {
+		ui.Text(c, "编曲："+e.doc.Meta.Arranger)
 	}
-	if ui.TextArea(c, &e.doc.Meta.Description).Height(96).Label("说明").Placeholder("说明").Changed() {
-		e.changed(false)
+	if e.doc.Meta.Description != "" {
+		ui.Scroll(c).Height(48).Children(func() {
+			ui.Text(c, e.doc.Meta.Description).FontSize(12).TextColor(palette.Muted)
+		})
 	}
 	ui.Divider(c)
-	ui.Row(c).Gap(8).Wrap().Children(func() {
-		ui.Row(c).Gap(4).Children(func() {
-			ui.Text(c, "BPM")
-			if ui.NumberInput(c, &e.tempo, 20, 400, 1).Width(100).Changed() {
-				e.checkpoint()
-				e.doc.Song.SetTempo(e.tempo)
-				e.changed(true)
-			}
+	ui.Column(c).Gap(4).Disabled(e.busy || e.mode != "编辑").Children(func() {
+		ui.Row(c).Gap(8).Wrap().Children(func() {
+			ui.Row(c).Gap(4).Children(func() {
+				ui.Text(c, "BPM")
+				if ui.NumberInput(c, &e.tempo, 20, 400, 1).Width(100).Changed() {
+					e.checkpoint()
+					e.doc.Song.SetTempo(e.tempo)
+					e.changed(true)
+				}
+			})
+			ui.Row(c).Gap(4).Children(func() {
+				ui.Text(c, "拍号")
+				if ui.NumberInput(c, &e.meterNum, 1, 32, 1).Width(80).Label("拍号分子").Changed() {
+					e.setMeter()
+				}
+				if ui.Select(c, &e.meterDen, []string{"2", "4", "8", "16"}).Width(50).Changed() {
+					e.setMeter()
+				}
+			})
 		})
-		ui.Row(c).Gap(4).Children(func() {
-			ui.Text(c, "拍号")
-			if ui.NumberInput(c, &e.meterNum, 1, 32, 1).Width(80).Label("拍号分子").Changed() {
-				e.setMeter()
-			}
-			if ui.Select(c, &e.meterDen, []string{"2", "4", "8", "16"}).Width(50).Changed() {
-				e.setMeter()
-			}
-		})
-	})
-	ui.Row(c).Gap(4).Wrap().Children(func() {
-		ui.Text(c, "主音")
-		if e.tonicInput == "" && e.tonicInputKey == 0 || e.tonicInputKey != e.tonic {
-			e.tonicInput = tonicName(int(e.tonic))
-			e.tonicInputKey = e.tonic
-		}
-		if ui.TextInput(c, &e.tonicInput).Width(90).Label("简谱主音，音名或 MIDI 数值").Placeholder("C4").Changed() {
-			if key, ok := tonicKey(e.tonicInput); ok {
-				e.tonic = float64(key)
+		ui.Row(c).Gap(4).Wrap().Children(func() {
+			ui.Text(c, "主音")
+			if e.tonicInput == "" && e.tonicInputKey == 0 || e.tonicInputKey != e.tonic {
+				e.tonicInput = tonicName(int(e.tonic))
 				e.tonicInputKey = e.tonic
 			}
-		}
+			if ui.TextInput(c, &e.tonicInput).Width(90).Label("简谱主音，音名或 MIDI 数值").Placeholder("C4").Changed() {
+				if key, ok := tonicKey(e.tonicInput); ok {
+					e.tonic = float64(key)
+					e.tonicInputKey = e.tonic
+				}
+			}
+		})
 	})
 }
 
@@ -289,10 +302,11 @@ func (e *Editor) sidebar(c *ui.Context) {
 	e.sidebarInfo(c)
 	ui.Divider(c)
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
-			ui.Column(c).Width(206).Gap(6).Children(func() { e.sidebarTracks(c) })
-			ui.Column(c).Grow(1).Gap(6).Children(func() {
-				ui.Text(c, "DoMiSo 文本").Bold()
+		ui.Column(c).Gap(8).Children(func() {
+			ui.Column(c).Gap(6).Children(func() { e.sidebarTracks(c) })
+			ui.Divider(c)
+			ui.Text(c, "DoMiSo 文本").Bold()
+			ui.Column(c).Grow(1).Gap(6).Disabled(e.mode != "编辑").Children(func() {
 				if ui.TextArea(c, &e.doc.Notation).Height(104).MinHeight(100).MaxHeightPercent(50).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
 					e.changed(false)
 					e.doc.OutOfSync = e.doc.Notation != ""
@@ -352,12 +366,35 @@ func (e *Editor) trackBar(c *ui.Context) {
 	ui.Divider(c)
 	ui.Row(c).Gap(8).Wrap().Disabled(e.busy).Children(func() {
 		button(c, "选择音源…", e.setInstrument)
-		button(c, "内置音", func() {
-			e.checkpoint()
-			t.Settings.Instrument = Instrument{Kind: "builtin"}
-			e.changed(false)
-			e.configureAudio()
-		})
+		if t.Settings.Instrument.Kind == "soundfont" {
+			sf, names := e.audio.soundFontPresets(e.track)
+			if sf != nil {
+				selected := names[0]
+				if p := t.Settings.Instrument.Preset; p != nil {
+					for i, choice := range sf.Presets {
+						if int(choice.BankNumber) == p.Bank && int(choice.PatchNumber) == p.Program {
+							selected = names[i+1]
+							break
+						}
+					}
+				}
+				if ui.Select(c, &selected, names).Width(320).Label("SoundFont 音色，显示实际 Bank 和 Program，数值从 0 开始").Changed() {
+					if selected == names[0] {
+						e.setSoundFontPreset(nil)
+					} else {
+						for i, name := range names[1:] {
+							if selected == name {
+								p := sf.Presets[i]
+								e.setSoundFontPreset(&SoundFontPreset{Bank: int(p.BankNumber), Program: int(p.PatchNumber)})
+								break
+							}
+						}
+					}
+				}
+			} else {
+				ui.Text(c, "音源不可用，内置音回退试听").FontSize(12).TextColor(palette.Muted)
+			}
+		}
 	})
 	if t.Settings.Instrument.Kind == "sample" || t.Settings.Instrument.Kind == "pack" {
 		ui.Row(c).Gap(8).Wrap().Disabled(e.busy).Children(func() {
@@ -406,7 +443,10 @@ func (e *Editor) trackBar(c *ui.Context) {
 }
 func instrumentLabel(in Instrument) string {
 	if in.Kind == "" || in.Kind == "builtin" {
-		return "内置合成音"
+		return "内置回退音（未加载音源）"
+	}
+	if in.Kind == "soundfont" && in.Preset != nil {
+		return fmt.Sprintf("%s · Bank %d / Program %d", in.File, in.Preset.Bank, in.Preset.Program)
 	}
 	return in.File
 }
@@ -443,44 +483,9 @@ func (e *Editor) performanceBar(c *ui.Context) {
 		}
 		button(c, "导入映射", e.importProfile)
 		button(c, "导出映射", e.exportProfile)
-		if ui.Checkbox(c, &e.practice, "练习").Changed() {
-			if !e.practice && e.audio.Waiting() {
-				e.audio.WaitAt(-1)
-				e.audio.Play(true)
-			}
-			e.groups = nil
-			e.practiceWait = false
-		}
-		if ui.Checkbox(c, &e.waitMode, "等音").Changed() {
-			if !e.waitMode && e.audio.Waiting() {
-				e.audio.WaitAt(-1)
-				e.audio.Play(true)
-			}
-		}
-		if ui.Checkbox(c, &e.gamePractice, "游戏监听").Disabled(runtime.GOOS != "windows").Changed() {
-			e.releaseKeys()
-			if err := (&AppService{}).SetGamePracticeMonitoring(e.gamePractice, e.profile().ProcessNames); err != nil {
-				e.gamePractice = false
-				e.message = err.Error()
-			}
-		}
 		if runtime.GOOS == "windows" {
 			button(c, "准备自动演奏", e.prepareAuto)
 			button(c, "紧急停止", func() { performance.stop() })
-		}
-		if e.practice {
-			for i := e.group; i < min(e.group+4, len(e.groups)); i++ {
-				g := e.groups[i]
-				labels := []string{}
-				for _, n := range g.Notes {
-					v := e.profile().KeyFor(e.state, n)
-					if v == "" {
-						v = fmt.Sprint(n)
-					}
-					labels = append(labels, strings.TrimPrefix(v, "Key"))
-				}
-				ui.Text(c, strings.Join(labels, "+")).TextColor(palette.Accent)
-			}
 		}
 	})
 }
@@ -992,13 +997,20 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 		}
 	}
 	e.displayTick, e.displayPlaying = tick, playing
-	keyboard := ui.Box(c).Height(156).Focusable().HandleInput(func(ev ui.InputEvent) bool { return e.keyInput(ev) }).Draw(func(painter *ui.Painter, r ui.Rect) {
-		width := min(float32(52), (r.W-8)/15)
+	keyboard := ui.Box(c).Focusable().Label("实体键盘；映射按键与音符提示").Clip()
+	if e.mode == "练习" {
+		keyboard.Grow(1)
+	} else {
+		keyboard.Height(156)
+	}
+	keyboard.HandleInput(func(ev ui.InputEvent) bool { return e.keyInput(ev) }).Draw(func(painter *ui.Painter, r ui.Rect) {
+		bounds, width, rowHeight := keyboardGeometry(r, e.mode == "练习")
+		scale := rowHeight / 30
 		now := time.Now()
 		for row, keys := range keyboardRows {
-			x := r.X + 4
+			x := bounds.X
 			for _, key := range keys {
-				rect := ui.Rect{X: x + 2, Y: r.Y + 3 + float32(row)*30, W: key.units*width - 4, H: 26}
+				rect := ui.Rect{X: x + 2*scale, Y: bounds.Y + 3*scale + float32(row)*rowHeight, W: max(0, key.units*width-4*scale), H: 26 * scale}
 				x += key.units * width
 				n, _, bound := p.Binding(e.state, key.code)
 				color := palette.Surface
@@ -1010,21 +1022,21 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 						}
 					}
 				}
-				painter.Fill(rect, color, 4)
+				painter.Fill(rect, color, 4*scale)
 				outline := palette.Grid
 				stroke := float32(1)
 				if bound && (e.pressed[n] || active[n]) {
 					outline = palette.Accent
 					stroke = 2
 				}
-				painter.Stroke(rect, outline, 4, stroke)
+				painter.Stroke(rect, outline, 4*scale, stroke)
 				size := float32(11)
 				if key.units <= 1.25 && len(key.label) > 3 {
 					size = 8
 				}
-				painter.Text(rect.X+5, rect.Y+2, key.label, size, palette.Text)
-				if bound && rect.W >= 27 {
-					painter.Text(rect.X+5, rect.Y+13, noteLabel(n, "简谱", int(e.tonic), p, e.state), 10, palette.Muted)
+				painter.Text(rect.X+5*scale, rect.Y+2*scale, key.label, size*scale, palette.Text)
+				if bound && rect.W >= 27*scale {
+					painter.Text(rect.X+5*scale, rect.Y+13*scale, noteLabel(n, "简谱", int(e.tonic), p, e.state), 10*scale, palette.Muted)
 				}
 			}
 		}

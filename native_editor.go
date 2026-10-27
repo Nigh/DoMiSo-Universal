@@ -33,6 +33,7 @@ type Editor struct {
 	rollNotes                              [][]Note
 	rollEnds                               [][]int64
 	meters                                 []MeterPoint
+	practiceSpans                          []practiceSpan
 	win                                    *mygo.Window
 	doc                                    Document
 	audio                                  *AudioEngine
@@ -146,6 +147,7 @@ func (e *Editor) checkpoint() {
 }
 func (e *Editor) changed(music bool) {
 	e.rollNotes = nil
+	e.practiceSpans = nil
 	e.doc.Dirty = true
 	if music {
 		performance.stop()
@@ -167,7 +169,7 @@ func (e *Editor) edit(fn func()) {
 	e.changed(true)
 }
 func (e *Editor) history(redo bool) {
-	if e.busy {
+	if e.busy || e.mode != "编辑" {
 		return
 	}
 	src, dst := &e.undo, &e.redo
@@ -184,6 +186,8 @@ func (e *Editor) history(redo bool) {
 	e.doc.Path = path
 	*src = (*src)[:len(*src)-1]
 	e.doc.Dirty = true
+	e.rollNotes = nil
+	e.practiceSpans = nil
 	e.track = min(e.track, len(e.doc.Song.Tracks)-1)
 	e.selected = map[int]bool{}
 	e.configureAudio()
@@ -276,6 +280,7 @@ func (e *Editor) load(path string) {
 }
 func (e *Editor) installDocument(d Document) {
 	e.rollNotes = nil
+	e.practiceSpans = nil
 	applyDefaultInstrument(&d.Song)
 	e.doc = d
 	e.track = 0
@@ -329,6 +334,7 @@ func (e *Editor) configureAudio() {
 	if e.busy {
 		return
 	}
+	applyDefaultInstrument(&e.doc.Song)
 	e.busy = true
 	s := cloneSong(e.doc.Song)
 	engine := e.audio
@@ -489,6 +495,9 @@ func (e *Editor) finishRecording() {
 	clear(e.recordStart)
 }
 func (e *Editor) addRecorded(key int, start, end int64) {
+	if e.mode != "编辑" {
+		return
+	}
 	s := &e.doc.Song
 	s.NextID++
 	t := &s.Tracks[e.track]
@@ -525,7 +534,7 @@ func (e *Editor) noteInput(code string, down bool, game bool) {
 	}
 	if !game {
 		e.audio.Note(e.track, n, down)
-		if e.recording {
+		if e.recording && e.mode == "编辑" {
 			tick, _ := e.audio.State()
 			if down && tick >= 0 {
 				e.recordStart[n] = int64(tick)

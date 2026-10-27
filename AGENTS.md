@@ -78,11 +78,14 @@ Legacy frontend sources are recoverable from commit `812e44c` on `feature/unifie
 - The roll displays A0–C8 (MIDI 21–108) only. Keep out-of-range MIDI in the document; exclude it from the roll index and hit testing.
 - Draw white piano keys first and shorter, right-aligned black keys over them. Clamp scrolling and pointer editing to the 88-key range.
 - Imported tracks without notes remain in Song for MIDI event and JSON v3 track-order preservation, but are hidden from the track list. A selected newly created empty editing track stays accessible.
-- Use native segmented switches for editor, snap, note-label and mapping-state choices. Separate adjacent control groups with dividers. Keep file actions beside the title, transport above mode selection, and track and practice controls grouped.
+- Use native segmented switches for edit, playback and practice modes, snap, note-label and mapping-state choices. Separate adjacent control groups with dividers. Keep file actions beside the title and key mapping controls above the editor.
 - Native palette and control colors follow the dark Xianii tokens from https://github.com/Nigh/xianii-theme, converted from OKLCH to sRGB.
 
 - The roll has a bordered note viewport and a separate top ruler. Horizontal and vertical zoom controls live inside the roll.
-- Transport and follow controls share the top bar; recording-loop controls are not shown. Without follow, playback pages when the playhead leaves the viewport. Dragging does not disable follow.
+- Transport lives at the bottom: start, previous bar, play/pause, next bar, end, and follow. Recording-loop controls are not shown. Without follow, playback pages when the playhead leaves the viewport. Dragging does not disable follow.
 - The PC keyboard draws the full physical range from ` to right Ctrl, with fading press color and a held-key outline.
 - Piano-roll white-key rows use the darker background and black-key rows the lighter surface; horizontal rules remain visible at fractional vertical scroll positions.
-- Song settings use one column and stay visible without scrolling. The tonic field shows note names such as C4 without `1=`, but still accepts DoMiSo `1=C4` input. Description is a four-line scrolling text field; the track list shows four rows before scrolling. On short windows, the track and DoMiSo panels scroll together below song settings.
+- The upper-right song information area shows existing metadata read-only; extracting metadata from notation is not implemented. BPM, meter and tonic are editable only in edit mode. The tonic field shows C4 without `1=`, but still accepts DoMiSo `1=C4`.
+- Keep the sheet selector at the left. Tracks and DoMiSo text share one vertical column in edit/playback modes. The track list shows four rows before scrolling.
+- Practice replaces the roll with a full-width timeline showing bar numbers and flattened note presence across all tracks. Hide track/text panels, center and enlarge the physical keyboard, and put practice controls below it. Practice input never records or edits notes.
+- SoundFont choices come from the loaded SF2 presets and show bank/program/name. A nullable per-track preset preserves original MIDI selection when unset; an explicit preset overrides synthesis without replacing MIDI events. Persist it in JSON. Built-in sound is fallback only, not a source-selection button.

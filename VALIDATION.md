@@ -34,3 +34,11 @@ Physical keyboard-to-speaker latency, live game input/anti-stuck-key behavior, a
 ## 2026-10-21 piano-roll and layout update
 
 Go 1.27.1 Linux: full tests, vet and trimpath build passed. Software preview inspected at 1380×900; the 1120×760 view is exercised in the imported-track/range regression check. Native interaction tests cover selection, dragging, keyboard focus and HiDPI. The roll indexes only MIDI 21–108 and hides imported note-free tracks while retaining their MIDI events. This pass did not revalidate physical audio or Windows game injection.
+
+## 2026-10-28 layout, practice and SoundFont update
+
+Windows amd64, Go 1.27.3: `go test ./...`, `go vet ./...` and `go build -trimpath -o bin/ ./...` passed. A temporary native UI smoke scenario rendered edit, playback and practice modes at 1380×900 and 1120×760. Inspected the small editing and practice previews, including the real SF2 preset selector and enlarged full-width practice keyboard. Smoke files and previews remain untracked; the temporary source was removed.
+
+Local GeneralUser-GS.sf2 exposes 288 choices including MIDI-follow mode. The smoke scenario selected Bank 0 / Program 1 (Bright Grand Piano) and rendered PCM. Regression checks compare preset PCM with MeltySynth, cover channel 10, seek, project reload, missing-resource fallback, timeline boundaries, follow/page, non-editing practice input, mode transition key release, bottom transport navigation and read-only playback settings.
+
+The native executable completed `--benchmark`; startup reported `register Ctrl+Alt+F8: Hot key is already registered.` Global hotkeys therefore were not validated by this run. Physical sound, real game input and Linux were not revalidated.
