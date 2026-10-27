@@ -23,7 +23,7 @@ var (
 )
 
 func tonicName(key int) string {
-	return fmt.Sprintf("1=%s%d", []string{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}[key%12], key/12-1)
+	return fmt.Sprintf("%s%d", []string{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}[key%12], key/12-1)
 }
 
 func tonicKey(text string) (int, bool) {
@@ -191,22 +191,18 @@ func (e *Editor) sidebarInfo(c *ui.Context) {
 			}
 		}
 	})
-	ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
-		ui.Column(c).Width(186).Gap(6).Children(func() {
-			if ui.TextInput(c, &e.doc.Meta.Title).Label("标题").Placeholder("标题").Changed() {
-				e.changed(false)
-			}
-			if ui.TextInput(c, &e.doc.Meta.Composer).Label("记谱 / 作曲").Placeholder("记谱 / 作曲").Changed() {
-				e.changed(false)
-			}
-			if ui.TextInput(c, &e.doc.Meta.Arranger).Label("编曲").Placeholder("编曲").Changed() {
-				e.changed(false)
-			}
-		})
-		if ui.TextArea(c, &e.doc.Meta.Description).Grow(1).Height(100).Label("说明").Placeholder("说明").Changed() {
-			e.changed(false)
-		}
-	})
+	if ui.TextInput(c, &e.doc.Meta.Title).Label("标题").Placeholder("标题").Changed() {
+		e.changed(false)
+	}
+	if ui.TextInput(c, &e.doc.Meta.Composer).Label("记谱 / 作曲").Placeholder("记谱 / 作曲").Changed() {
+		e.changed(false)
+	}
+	if ui.TextInput(c, &e.doc.Meta.Arranger).Label("编曲").Placeholder("编曲").Changed() {
+		e.changed(false)
+	}
+	if ui.TextArea(c, &e.doc.Meta.Description).Height(96).Label("说明").Placeholder("说明").Changed() {
+		e.changed(false)
+	}
 	ui.Divider(c)
 	ui.Row(c).Gap(8).Wrap().Children(func() {
 		ui.Row(c).Gap(4).Children(func() {
@@ -233,7 +229,7 @@ func (e *Editor) sidebarInfo(c *ui.Context) {
 			e.tonicInput = tonicName(int(e.tonic))
 			e.tonicInputKey = e.tonic
 		}
-		if ui.TextInput(c, &e.tonicInput).Width(90).Label("简谱主音，音名或 MIDI 数值").Placeholder("1=C4").Changed() {
+		if ui.TextInput(c, &e.tonicInput).Width(90).Label("简谱主音，音名或 MIDI 数值").Placeholder("C4").Changed() {
 			if key, ok := tonicKey(e.tonicInput); ok {
 				e.tonic = float64(key)
 				e.tonicInputKey = e.tonic
@@ -292,17 +288,19 @@ func (e *Editor) sidebarTracks(c *ui.Context) {
 func (e *Editor) sidebar(c *ui.Context) {
 	e.sidebarInfo(c)
 	ui.Divider(c)
-	ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
-		ui.Column(c).Width(206).Gap(6).Children(func() { e.sidebarTracks(c) })
-		ui.Column(c).Grow(1).Gap(6).Children(func() {
-			ui.Text(c, "DoMiSo 文本").Bold()
-			if ui.TextArea(c, &e.doc.Notation).Height(104).MinHeight(100).MaxHeightPercent(50).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
-				e.changed(false)
-				e.doc.OutOfSync = e.doc.Notation != ""
-			}
-			if ui.Button(c, "从文本重新生成 MIDI").Width(166).Clicked() {
-				e.regenerate()
-			}
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
+			ui.Column(c).Width(206).Gap(6).Children(func() { e.sidebarTracks(c) })
+			ui.Column(c).Grow(1).Gap(6).Children(func() {
+				ui.Text(c, "DoMiSo 文本").Bold()
+				if ui.TextArea(c, &e.doc.Notation).Height(104).MinHeight(100).MaxHeightPercent(50).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
+					e.changed(false)
+					e.doc.OutOfSync = e.doc.Notation != ""
+				}
+				if ui.Button(c, "从文本重新生成 MIDI").Width(166).Clicked() {
+					e.regenerate()
+				}
+			})
 		})
 	})
 }
