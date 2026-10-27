@@ -33,7 +33,7 @@ DoMiSo Universal is a native Go desktop MIDI editor using mygo's GPU UI, without
 - Edit one selected track; show other tracks as ghosts. Playback mode disables note edits. Dragging uses a single undo entry.
 - Two negative pre-roll bars are display/transport only; never create or record negative MIDI ticks.
 - Cache a sorted note/prefix-end index per track; rebuild on edits, query visible ranges during rendering. Respect DIP/HiDPI scaling.
-- Input keys use physical ANSI positions. Text controls own their keyboard input; focus loss releases live notes and finishes gestures.
+- Input keys use physical ANSI positions. Text controls own their keyboard input; Space toggles playback from other focused controls. Focus loss releases live notes and finishes gestures.
 - Route PC keys through one Go note-input function for sound, recording, practice and highlighting.
 - Audio is Go-MeltySynth plus sampled PCM and a built-in sine fallback, mixed to one 48kHz stereo Oto stream. Output buffering is configurable at 20/40/80ms and applies after restart.
 - Display position interpolates the transport clock independently of the rendered-ahead PCM frontier. Request at most 60 display updates per second, including while occluded. Scrub gestures preview the position and restore MIDI state/queued audio once on release.
@@ -78,9 +78,11 @@ Legacy frontend sources are recoverable from commit `812e44c` on `feature/unifie
 - The roll displays A0–C8 (MIDI 21–108) only. Keep out-of-range MIDI in the document; exclude it from the roll index and hit testing.
 - Draw white piano keys first and shorter, right-aligned black keys over them. Clamp scrolling and pointer editing to the 88-key range.
 - Imported tracks without notes remain in Song for MIDI event and JSON v3 track-order preservation, but are hidden from the track list. A selected newly created empty editing track stays accessible.
-- Use native segmented switches for editor, snap, note-label and mapping-state choices. Keep file, transport/loop, editing, display, instrument and practice controls grouped; wrap rows and scroll the sidebar.
+- Use native segmented switches for editor, snap, note-label and mapping-state choices. Separate adjacent control groups with dividers. Keep file actions beside the title, transport above mode selection, and track and practice controls grouped.
 - Native palette and control colors follow the dark Xianii tokens from https://github.com/Nigh/xianii-theme, converted from OKLCH to sRGB.
 
 - The roll has a bordered note viewport and a separate top ruler. Horizontal and vertical zoom controls live inside the roll.
-- Transport and follow controls share the compact top bar; recording-loop controls are not shown. DoMiSo text remains an editable compatibility view and fills its available panel height.
+- Transport and follow controls share the top bar; recording-loop controls are not shown. Without follow, playback pages when the playhead leaves the viewport. Dragging does not disable follow.
 - The PC keyboard draws the full physical range from ` to right Ctrl, with fading press color and a held-key outline.
+- Piano-roll white-key rows use the darker background and black-key rows the lighter surface; horizontal rules remain visible at fractional vertical scroll positions.
+- Song information stays visible without sidebar scrolling. Description is a four-line scrolling text field; the track list shows four rows before scrolling. DoMiSo compatibility text uses at most half the sidebar height.

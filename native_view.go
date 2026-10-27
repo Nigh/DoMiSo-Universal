@@ -86,54 +86,51 @@ func (e *Editor) view(c *ui.Context) {
 	if playing || e.recording {
 		c.After(time.Second / 60)
 	}
-	ui.Column(c).Fill().Gap(6).Padding(8).Children(func() {
-		ui.Row(c).Gap(4).Children(func() {
-			ui.Row(c).Width(370).Gap(6).Children(func() {
-				choice(c, &e.mode, "编辑", "播放")
-				ui.Text(c, "DoMiSo").FontSize(18).Bold()
-				button(c, "撤销", func() { e.history(false) })
-				button(c, "重做", func() { e.history(true) })
-			})
-			ui.Row(c).Grow(1).Gap(6).Children(func() {
-				ui.Spacer(c)
-				if playing {
-					iconButton(c, pauseIcon, "暂停播放", e.togglePlay)
-				} else {
-					iconButton(c, playIcon, "播放", e.togglePlay)
-				}
-				iconButton(c, stopIcon, "停止播放", e.stop)
-				ui.Checkbox(c, &e.follow, "跟随")
-				ui.Textf(c, "%.0f", tick).Width(65).Label("播放位置 tick")
-				ui.Spacer(c)
-			})
-			ui.Row(c).Width(370).Gap(5).Children(func() {
-				button(c, "打开", e.open)
-				button(c, "保存", func() { e.save(false) })
-				button(c, "另存为", func() { e.save(true) })
-				button(c, "导出 MIDI", func() { e.export(true) })
-				button(c, "导出原文", func() { e.export(false) })
-			})
+	root := ui.Column(c).Fill().Gap(6).Padding(8)
+	root.Children(func() {
+		ui.Row(c).Gap(6).Wrap().Children(func() {
+			ui.Text(c, "DoMiSo").FontSize(18).Bold()
+			button(c, "打开", e.open)
+			button(c, "保存", func() { e.save(false) })
+			button(c, "另存为", func() { e.save(true) })
+			button(c, "导出 MIDI", func() { e.export(true) })
+			button(c, "导出原文", func() { e.export(false) })
+			ui.Divider(c)
+			button(c, "撤销", func() { e.history(false) })
+			button(c, "重做", func() { e.history(true) })
 		})
-		ui.Row(c).Gap(8).Children(func() {
+		ui.Row(c).Gap(6).Children(func() {
+			ui.Spacer(c)
+			if playing {
+				iconButton(c, pauseIcon, "暂停播放", e.togglePlay)
+			} else {
+				iconButton(c, playIcon, "播放", e.togglePlay)
+			}
+			iconButton(c, stopIcon, "停止播放", e.stop)
+			ui.Checkbox(c, &e.follow, "跟随")
+			ui.Textf(c, "%.0f", tick).Width(65).Label("播放位置 tick")
+			ui.Spacer(c)
+		})
+		ui.Row(c).Children(func() {
+			ui.Spacer(c)
+			choice(c, &e.mode, "编辑", "播放")
+			ui.Spacer(c)
+		})
+		ui.Row(c).Gap(8).Wrap().Children(func() {
 			ui.Text(c, "吸附")
 			choice(c, &e.grid, "自由", "1/16", "1/8", "1/7", "1/6", "1/5", "1/4", "1/3", "1/2")
-			ui.Spacer(c)
+			ui.Divider(c)
 			ui.Text(c, "标签")
 			choice(c, &e.label, "隐藏", "音名", "简谱", "按键")
-			ui.Text(c, "主音")
-			if e.tonicInput == "" && e.tonicInputKey == 0 || e.tonicInputKey != e.tonic {
-				e.tonicInput = tonicName(int(e.tonic))
-				e.tonicInputKey = e.tonic
-			}
-			if ui.TextInput(c, &e.tonicInput).Width(90).Label("简谱主音，音名或 MIDI 数值").Placeholder("1=C4").Changed() {
-				if key, ok := tonicKey(e.tonicInput); ok {
-					e.tonic = float64(key)
-					e.tonicInputKey = e.tonic
-				}
+			ui.Divider(c)
+			ui.Text(c, "音频缓冲 ms")
+			if ui.Select(c, &e.buffer, []string{"20", "40", "80"}).Width(65).Changed() {
+				e.saveSettings()
+				e.message = "缓冲设置重启后生效"
 			}
 		})
 		ui.Row(c).Grow(1).MinHeight(200).Gap(8).AlignItems(ui.Stretch).Children(func() {
-			ui.Column(c).Width(270).Gap(8).Disabled(e.busy).Children(func() { e.sidebar(c) })
+			ui.Column(c).Width(380).Gap(8).Disabled(e.busy).Children(func() { e.sidebar(c) })
 			ui.Column(c).Grow(1).Gap(5).Children(func() {
 				e.trackBar(c)
 				roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput).Draw(func(p *ui.Painter, r ui.Rect) { e.rollWidth, e.rollHeight = r.W, r.H; e.drawRoll(p, r, tick, playing) })
@@ -154,72 +151,100 @@ func (e *Editor) view(c *ui.Context) {
 		}
 		ui.Text(c, state+e.message).FontSize(12).TextColor(palette.Muted).SingleLine()
 	})
+	if root.Shortcut(0, ui.KeySpace) && !e.busy {
+		e.togglePlay()
+	}
 	if e.inputFocused && !e.buildFocus && len(e.keyDown) > 0 {
 		e.releaseKeys()
 	}
 	e.inputFocused = e.buildFocus
 }
 func (e *Editor) sidebarInfo(c *ui.Context) {
-	ui.Text(c, "曲谱").Bold()
 	names := []string{"选择内置曲谱…"}
 	for _, s := range e.sheets {
 		names = append(names, s.Name)
 	}
-	if ui.Select(c, &e.sheet, names).Changed() {
-		for _, s := range e.sheets {
-			if s.Name == e.sheet && e.confirmUnsaved() {
-				text, err := (&AppService{}).LoadSheet(s.Path)
-				if err != nil {
-					e.message = err.Error()
+	ui.Row(c).Gap(8).Children(func() {
+		ui.Text(c, "曲谱").Bold()
+		if ui.Select(c, &e.sheet, names).Grow(1).Changed() {
+			for _, s := range e.sheets {
+				if s.Name == e.sheet && e.confirmUnsaved() {
+					text, err := (&AppService{}).LoadSheet(s.Path)
+					if err != nil {
+						e.message = err.Error()
+						break
+					}
+					b, err := (&AppService{}).ParseTextToMIDI(text)
+					if err != nil {
+						e.message = err.Error()
+						break
+					}
+					song, err := readSong(b)
+					if err != nil {
+						e.message = err.Error()
+						break
+					}
+					e.stop()
+					e.installDocument(Document{Song: song, Notation: text, Generated: true})
 					break
 				}
-				b, err := (&AppService{}).ParseTextToMIDI(text)
-				if err != nil {
-					e.message = err.Error()
-					break
-				}
-				song, err := readSong(b)
-				if err != nil {
-					e.message = err.Error()
-					break
-				}
-				e.stop()
-				e.installDocument(Document{Song: song, Notation: text, Generated: true})
-				break
 			}
 		}
-	}
-	if ui.TextInput(c, &e.doc.Meta.Title).Label("标题").Placeholder("标题").Changed() {
-		e.changed(false)
-	}
-	if ui.TextInput(c, &e.doc.Meta.Composer).Label("记谱 / 作曲").Placeholder("记谱 / 作曲").Changed() {
-		e.changed(false)
-	}
-	if ui.TextInput(c, &e.doc.Meta.Arranger).Label("编曲").Placeholder("编曲").Changed() {
-		e.changed(false)
-	}
-	if ui.TextInput(c, &e.doc.Meta.Description).Label("说明").Placeholder("说明").Changed() {
-		e.changed(false)
-	}
-	ui.Row(c).Gap(4).Wrap().Children(func() {
-		ui.Text(c, "BPM")
-		if ui.NumberInput(c, &e.tempo, 20, 400, 1).Width(140).Changed() {
-			e.checkpoint()
-			e.doc.Song.SetTempo(e.tempo)
-			e.changed(true)
+	})
+	ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
+		ui.Column(c).Width(186).Gap(6).Children(func() {
+			if ui.TextInput(c, &e.doc.Meta.Title).Label("标题").Placeholder("标题").Changed() {
+				e.changed(false)
+			}
+			if ui.TextInput(c, &e.doc.Meta.Composer).Label("记谱 / 作曲").Placeholder("记谱 / 作曲").Changed() {
+				e.changed(false)
+			}
+			if ui.TextInput(c, &e.doc.Meta.Arranger).Label("编曲").Placeholder("编曲").Changed() {
+				e.changed(false)
+			}
+		})
+		if ui.TextArea(c, &e.doc.Meta.Description).Grow(1).Height(100).Label("说明").Placeholder("说明").Changed() {
+			e.changed(false)
 		}
 	})
+	ui.Divider(c)
+	ui.Row(c).Gap(8).Wrap().Children(func() {
+		ui.Row(c).Gap(4).Children(func() {
+			ui.Text(c, "BPM")
+			if ui.NumberInput(c, &e.tempo, 20, 400, 1).Width(100).Changed() {
+				e.checkpoint()
+				e.doc.Song.SetTempo(e.tempo)
+				e.changed(true)
+			}
+		})
+		ui.Row(c).Gap(4).Children(func() {
+			ui.Text(c, "拍号")
+			if ui.NumberInput(c, &e.meterNum, 1, 32, 1).Width(80).Label("拍号分子").Changed() {
+				e.setMeter()
+			}
+			if ui.Select(c, &e.meterDen, []string{"2", "4", "8", "16"}).Width(50).Changed() {
+				e.setMeter()
+			}
+		})
+	})
 	ui.Row(c).Gap(4).Wrap().Children(func() {
-		ui.Text(c, "拍号")
-		if ui.NumberInput(c, &e.meterNum, 1, 32, 1).Width(140).Label("拍号分子").Changed() {
-			e.setMeter()
+		ui.Text(c, "主音")
+		if e.tonicInput == "" && e.tonicInputKey == 0 || e.tonicInputKey != e.tonic {
+			e.tonicInput = tonicName(int(e.tonic))
+			e.tonicInputKey = e.tonic
 		}
-		if ui.Select(c, &e.meterDen, []string{"2", "4", "8", "16"}).Width(55).Changed() {
-			e.setMeter()
+		if ui.TextInput(c, &e.tonicInput).Width(90).Label("简谱主音，音名或 MIDI 数值").Placeholder("1=C4").Changed() {
+			if key, ok := tonicKey(e.tonicInput); ok {
+				e.tonic = float64(key)
+				e.tonicInputKey = e.tonic
+			}
 		}
 	})
+}
+
+func (e *Editor) sidebarTracks(c *ui.Context) {
 	ui.Text(c, "轨道").Bold()
-	ui.Scroll(c).Height(135).Children(func() {
+	ui.Scroll(c).Height(120).MinHeight(120).Shrink(0).Children(func() {
 		for i := range e.doc.Song.Tracks {
 			if len(e.doc.Song.Tracks[i].Notes) == 0 && i != e.track {
 				continue
@@ -255,27 +280,30 @@ func (e *Editor) sidebarInfo(c *ui.Context) {
 				e.configureAudio()
 			}
 		})
-		button(c, "↑", func() { e.moveTrack(-1) })
-		button(c, "↓", func() { e.moveTrack(1) })
+		if ui.Button(c, "↑").Width(27).Label("上移轨道").Clicked() {
+			e.moveTrack(-1)
+		}
+		if ui.Button(c, "↓").Width(27).Label("下移轨道").Clicked() {
+			e.moveTrack(1)
+		}
 	})
 }
 
 func (e *Editor) sidebar(c *ui.Context) {
-	ui.Scroll(c).Height(270).Children(func() {
-		ui.Column(c).Gap(8).Children(func() { e.sidebarInfo(c) })
-	})
-	ui.Text(c, "DoMiSo 文本").Bold()
-	if ui.TextArea(c, &e.doc.Notation).Grow(1).MinHeight(120).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
-		e.changed(false)
-		e.doc.OutOfSync = e.doc.Notation != ""
-	}
-	button(c, "从文本重新生成 MIDI", e.regenerate)
-	ui.Row(c).Gap(4).Wrap().Children(func() {
-		ui.Text(c, "音频缓冲 ms")
-		if ui.Select(c, &e.buffer, []string{"20", "40", "80"}).Width(65).Changed() {
-			e.saveSettings()
-			e.message = "缓冲设置重启后生效"
-		}
+	e.sidebarInfo(c)
+	ui.Divider(c)
+	ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
+		ui.Column(c).Width(206).Gap(6).Children(func() { e.sidebarTracks(c) })
+		ui.Column(c).Grow(1).Gap(6).Children(func() {
+			ui.Text(c, "DoMiSo 文本").Bold()
+			if ui.TextArea(c, &e.doc.Notation).Height(104).MinHeight(100).MaxHeightPercent(50).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
+				e.changed(false)
+				e.doc.OutOfSync = e.doc.Notation != ""
+			}
+			if ui.Button(c, "从文本重新生成 MIDI").Width(166).Clicked() {
+				e.regenerate()
+			}
+		})
 	})
 }
 func (e *Editor) setMeter() {
@@ -323,6 +351,7 @@ func (e *Editor) trackBar(c *ui.Context) {
 			e.audio.Update(e.doc.Song)
 		}
 	})
+	ui.Divider(c)
 	ui.Row(c).Gap(8).Wrap().Disabled(e.busy).Children(func() {
 		button(c, "选择音源…", e.setInstrument)
 		button(c, "内置音", func() {
@@ -469,21 +498,25 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 	e.ensureLabelCache()
 	e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-r.H+rollHeaderHeight), e.scrollY))
 	e.scrollX = max(-float32(e.doc.Song.BarTicks()*2)*e.zoom, e.scrollX)
-	if e.follow && playing && e.drag == "" {
-		e.scrollX = float32(tick)*e.zoom - (r.W-rollKeysWidth)/2
+	if playing && e.drag == "" {
+		head := float32(tick)*e.zoom - e.scrollX
+		if e.follow || head < 0 || head >= r.W-rollKeysWidth {
+			e.scrollX = float32(tick)*e.zoom - (r.W-rollKeysWidth)/2
+		}
 	}
 	p.Fill(r, palette.Background, 0)
 	p.Clip(r, 0, func() {
 		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: rollHeaderHeight}, palette.Surface, 0)
 		p.Clip(ui.Rect{X: r.X + rollKeysWidth, Y: r.Y + rollHeaderHeight, W: max(0, r.W-rollKeysWidth), H: max(0, r.H-rollHeaderHeight)}, 0, func() {
-			for key := pianoLow; key <= pianoHigh; key++ {
+			// Draw from top to bottom: pixel-snapped fills must not cover the previous row's grid line.
+			for key := pianoHigh; key >= pianoLow; key-- {
 				y := r.Y + rollHeaderHeight + float32(pianoHigh-key)*e.rowHeight - e.scrollY
 				if y+e.rowHeight < r.Y+rollHeaderHeight || y > r.Y+r.H {
 					continue
 				}
-				shade := palette.Surface
+				shade := palette.Background
 				if isBlack(key) {
-					shade = palette.Background
+					shade = palette.Surface
 				}
 				p.Fill(ui.Rect{X: r.X + rollKeysWidth, Y: y, W: r.W - rollKeysWidth, H: e.rowHeight}, shade, 0)
 				p.Line(r.X+rollKeysWidth, y, r.X+r.W, y, 1, palette.Grid)
@@ -711,7 +744,6 @@ func (e *Editor) rollInput(ev ui.InputEvent) bool {
 			if e.mode == "播放" {
 				e.beginScrub()
 			}
-			e.follow = false
 			return true
 		}
 		notes := e.doc.Song.Tracks[e.track].Notes

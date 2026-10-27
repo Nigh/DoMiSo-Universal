@@ -323,6 +323,15 @@ func TestNativeView(t *testing.T) {
 		if err = png.Encode(f, tester.Image()); err != nil {
 			t.Fatal(err)
 		}
+		tester.SetSize(1120, 760)
+		small, err := os.Create("bin/native-preview-small.png")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer small.Close()
+		if err := png.Encode(small, tester.Image()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 func TestPracticeWaitUsesAudioClock(t *testing.T) {
@@ -409,6 +418,46 @@ func TestNativeUIEditingAndInputFocus(t *testing.T) {
 		t.Fatal("HiDPI render")
 	}
 }
+func TestSpacePlaysOutsideTextEditors(t *testing.T) {
+	e := newEditor()
+	e.doc.Song = testSong()
+	e.audio.Configure(e.doc.Song)
+	tester := ui.NewTester(e.view, 1380, 900)
+	for _, label := range []string{"撤销", "跟随", "重做"} {
+		if err := tester.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		_, before := e.audio.State()
+		tester.Key(0, ui.KeySpace)
+		_, after := e.audio.State()
+		if before == after {
+			t.Fatalf("space did not toggle playback with %s focused", label)
+		}
+	}
+	roll, ok := tester.Find("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选")
+	if !ok {
+		t.Fatal("roll missing")
+	}
+	tester.ClickAt(roll.X+roll.W/2, roll.Y+roll.H/2)
+	_, beforeRoll := e.audio.State()
+	tester.Key(0, ui.KeySpace)
+	_, afterRoll := e.audio.State()
+	if beforeRoll == afterRoll {
+		t.Fatal("space did not toggle playback with roll focused")
+	}
+	if err := tester.Click("DoMiSo 乐谱源文"); err != nil {
+		t.Fatal(err)
+	}
+	_, before := e.audio.State()
+	tester.Type("a")
+	tester.TypeKey(0, ui.KeySpace, " ")
+	tester.Type("b")
+	_, after := e.audio.State()
+	if before != after || e.doc.Notation != "a b" {
+		t.Fatalf("text space changed playback or was not inserted: %q", e.doc.Notation)
+	}
+}
+
 func TestPhysicalKeyboardRows(t *testing.T) {
 	seen := map[string]bool{}
 	for row, keys := range keyboardRows {
@@ -653,5 +702,67 @@ func TestPianoRangeAndImportedTrackVisibility(t *testing.T) {
 	}
 	if len(e.doc.Song.Tracks) != 2 {
 		t.Fatal("metadata track lost")
+	}
+}
+
+func TestNativeRollPagesWhenFollowIsOff(t *testing.T) {
+	e := newEditor()
+	e.follow = false
+	var tick float64
+	tester := ui.NewTester(func(c *ui.Context) {
+		ui.Box(c).Grow(1).Draw(func(p *ui.Painter, r ui.Rect) {
+			e.drawRoll(p, r, tick, true)
+		})
+	}, 400, 200)
+	tick = 3000
+	tester.Frame()
+	if head := rollKeysWidth + float32(tick)*e.zoom - e.scrollX; head < rollKeysWidth || head >= 400 {
+		t.Fatalf("playhead stayed outside right edge: %f", head)
+	}
+	tick = 100
+	tester.Frame()
+	if head := rollKeysWidth + float32(tick)*e.zoom - e.scrollX; head < rollKeysWidth || head >= 400 {
+		t.Fatalf("playhead stayed outside left edge: %f", head)
+	}
+	if e.follow {
+		t.Fatal("automatic page enabled follow")
+	}
+}
+
+func TestNativeRollPanKeepsFollow(t *testing.T) {
+	e := newEditor()
+	e.mode = "播放"
+	e.rollWidth, e.rollHeight = 400, 200
+	e.rollInput(ui.InputEvent{Kind: ui.InputPointerDown, X: 100, Y: 100})
+	if e.drag != "pan" || !e.follow {
+		t.Fatal("pan disabled follow")
+	}
+	e.rollInput(ui.InputEvent{Kind: ui.InputPointerUp})
+	if !e.follow {
+		t.Fatal("finishing pan disabled follow")
+	}
+}
+
+func TestNativeRollGridAndKeyShadingOnFractionalScroll(t *testing.T) {
+	e := newEditor()
+	e.follow = false
+	e.scrollY = 0
+	tester := ui.NewTester(func(c *ui.Context) {
+		ui.Box(c).Grow(1).Draw(func(p *ui.Painter, r ui.Rect) {
+			e.drawRoll(p, r, 0, false)
+		})
+	}, 400, 200)
+	if pixel := tester.Image().RGBAAt(70, 46); pixel.R != palette.Grid.R || pixel.G != palette.Grid.G || pixel.B != palette.Grid.B {
+		t.Fatalf("integer-scroll grid line missing: %v", pixel)
+	}
+	e.scrollY = 0.5
+	tester.Frame()
+	if pixel := tester.Image().RGBAAt(70, 45); pixel.R != palette.Grid.R || pixel.G != palette.Grid.G || pixel.B != palette.Grid.B {
+		t.Fatalf("fractional-scroll grid line missing: %v", pixel)
+	}
+	white := tester.Image().RGBAAt(70, 35)
+	black := tester.Image().RGBAAt(70, 75)
+	if white.R != palette.Background.R || black.R != palette.Surface.R {
+		t.Fatalf("wrong white/black lane shades: white=%v black=%v", white, black)
 	}
 }
