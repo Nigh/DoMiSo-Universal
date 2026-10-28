@@ -42,3 +42,35 @@ Windows amd64, Go 1.27.3: `go test ./...`, `go vet ./...` and `go build -trimpat
 Local GeneralUser-GS.sf2 exposes 288 choices including MIDI-follow mode. The smoke scenario selected Bank 0 / Program 1 (Bright Grand Piano) and rendered PCM. Regression checks compare preset PCM with MeltySynth, cover channel 10, seek, project reload, missing-resource fallback, timeline boundaries, follow/page, non-editing practice input, mode transition key release, bottom transport navigation and read-only playback settings.
 
 The native executable completed `--benchmark`; startup reported `register Ctrl+Alt+F8: Hot key is already registered.` Global hotkeys therefore were not validated by this run. Physical sound, real game input and Linux were not revalidated.
+
+## 2026-10-28 UI/UX refinement
+
+Windows amd64: `go test ./...`, `go vet ./...` and `go build -trimpath -o bin/domiso-ux.exe .` passed. A temporary smoke scenario rendered editing, playback and practice at 1380×900 and 1120×760 with the local GeneralUser SF2 loaded. The editing viewport measures 1068×300 DIP and 808×160 DIP respectively. Inspected small editing/practice and large playback previews; notes at C4 remain visible in the small editor. Also inspected the small editor with complete metadata and selected notes; bounded metadata scrolling prevents keyboard/help overlap.
+
+Launched the actual Windows executable and inspected its UI Automation tree (91 descendants). Selected playback, practice and editing through native selection patterns; each reported selected state. Invoked play and pause through the native button pattern and observed the pause button after playback began. `PrintWindow` succeeded and the captured GPU window was inspected. Temporary smoke source/scripts are removed; ignored previews and the executable remain under `bin/`.
+
+Regression checks cover playback protection of track structure/names, selected-track pitch visibility without overriding later scrolling, metadata/sample controls retaining keyboard/transport visibility, tempo/meter-aware transport positions, practice boundary clipping, keyboard focus/input and the distinction between wait-gated and manually paused playback. Existing text-entry/Space, note-editing, MIDI and asset checks still pass. Theme contrast calculations give normal text at least 13.87:1, muted text 7.10:1 and the focus accent 8.10:1 against the two main dark surfaces. No new dependencies or frontend build were added.
+
+This pass does not validate physical audio latency, real-game injection/monitoring or Linux rendering. The UI/UX skill's generated hero-page pattern did not fit a native editor and was not adopted; a focused UX search verified visible keyboard-focus guidance instead. Existing Xianii colors and native controls remain authoritative.
+
+## 2026-10-28 wait-practice hints
+
+Reproduced the keyboard-outline defect with a rendered-input regression: after accepting A+D, the group index advanced but A retained its outline. The regression now passes: partial chords retain the current outlines; accepting A+D immediately outlines S while A and D remain held; repeated S requires release and a fresh press; finishing clears every target outline.
+
+The timeline keeps merged note-presence spans, but each audible chord onset receives a vertical marker independently of the current practice group. Regression coverage includes starts inside a sustained span, omission of muted-track markers, cache invalidation after muting, and an unchanged timeline image when the judged group advances.
+
+Windows Go 1.27.3: `go test ./...`, `go vet ./...` and `go build -trimpath -o bin/ ./...` passed. A temporary 1120×760 full-view smoke scenario rendered initial, advanced-with-previous-keys-held and completed practice states; all three previews were inspected. The actual Windows executable loaded the smoke MIDI; UI Automation selected practice and enabled wait mode. Foreground synthetic A+D input advanced the displayed pending chord to S, confirmed in the captured GPU window. This is not a physical keyboard-latency or real-game test. Temporary smoke source/scripts are removed; ignored previews and MIDI remain under `bin/`.
+
+## 2026-10-28 practice flash isolation
+
+The rendered regression reproduced a false fill on A at tick 0 before the audio reader consumed the first wait gate. The keyboard shared playback note-on flashes with real-input feedback; the audio reader already gates before dispatching the target MIDI event. Practice now generates flashes only from live input, and mode transitions clear stale flashes. Playback-mode note previews are unchanged.
+
+`TestPracticeKeysFlashOnlyFromInput` checks the first target before/after gating, real-key fill feedback, arrival at the next target before its gate is consumed, wait/free practice, playback previews and switching back from playback. It also verifies silent PCM at the first unpressed target. Existing chord-outline advancement, repeated-chord and manual-pause regressions pass.
+
+Windows Go 1.27.3: full tests, vet and `go build -trimpath -o bin/ ./...` passed. A temporary full-view 1120×760 smoke scenario rendered four states: tick 0 before gating, tick 0 waiting, tick 480 before gating and tick 480 waiting. Inspected previews confirm pending A/S stay unfilled while the actual A press retains its fading feedback. Removed the temporary source; ignored previews remain in `bin/`. Physical sound latency, real-game input and Linux were not revalidated.
+
+## 2026-10-28 expanding notation area
+
+Removed the fixed 104-DIP height and 50% height cap from the notation editor. Its column and text area now grow through the remaining sidebar height; the track list and text area own their scrolling, while the regeneration button stays at the bottom.
+
+The layout regression covers edit/playback modes at 1120×760 and 1120×900: increasing window height by 140 DIP increases the text area height and moves the regeneration button by the same amount, without overlap with the bottom transport. Text-entry/Space and metadata/sample layout checks pass. Software previews at 1380×900 and 1120×760 were rendered and visually inspected using `DOMISO_RENDER_PREVIEW=1 go test -run TestNativeView -count=1`.

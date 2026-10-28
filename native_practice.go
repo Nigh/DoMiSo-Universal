@@ -32,18 +32,55 @@ func practiceNoteSpans(song Song) []practiceSpan {
 	return merged
 }
 
+func (e *Editor) ensurePracticeTimeline() {
+	if e.practiceSpans == nil {
+		e.practiceSpans = practiceNoteSpans(e.doc.Song)
+		e.practiceChords = songChords(e.doc.Song, 0)
+	}
+}
+
+const practiceTimelineLabel = "练习时间轴；所有轨道音符汇总，不可编辑。拖动定位，滚轮横移，Ctrl 滚轮缩放，Space 播放或暂停"
+
 func (e *Editor) practiceTimeline(c *ui.Context, tick float64, playing bool) {
-	timeline := ui.Box(c).Height(76).Clip().Focusable().Label("练习时间轴；显示小节与所有轨道音符，拖动定位，滚轮横移，Ctrl 滚轮缩放").HandleInput(e.practiceTimelineInput).Draw(func(p *ui.Painter, r ui.Rect) {
+	e.ensurePracticeTimeline()
+	ui.Row(c).Gap(8).Wrap().Children(func() {
+		ui.Text(c, "全轨时间轴").FontSize(12).TextColor(palette.Muted)
+		ui.Text(c, e.practiceTimelineStatus(tick, playing)).FontSize(12)
+		ui.Spacer(c)
+		ui.Text(c, "竖线：按键位置 · 拖动定位 · 滚轮横移 · Ctrl + 滚轮缩放").FontSize(12).TextColor(palette.Muted)
+	})
+	timeline := ui.Box(c).Height(76).Clip().Focusable().FocusRing(false).Label(practiceTimelineLabel).HandleInput(e.practiceTimelineInput)
+	timeline.Draw(func(p *ui.Painter, r ui.Rect) {
 		e.rollWidth, e.rollHeight = r.W, r.H
 		e.drawPracticeTimeline(p, r, tick, playing)
+		if timeline.FocusVisible() {
+			p.Stroke(ui.Rect{X: r.X + 1, Y: r.Y + 1, W: max(0, r.W-2), H: max(0, r.H-2)}, palette.Selected, 0, 2)
+		}
 	})
 	e.buildFocus = e.buildFocus || timeline.Focused()
 }
 
-func (e *Editor) drawPracticeTimeline(p *ui.Painter, r ui.Rect, tick float64, playing bool) {
-	if e.practiceSpans == nil {
-		e.practiceSpans = practiceNoteSpans(e.doc.Song)
+func (e *Editor) practiceTimelineStatus(tick float64, playing bool) string {
+	if len(e.practiceSpans) == 0 {
+		return "暂无音符 · 打开曲谱，或切到编辑模式添加音符"
 	}
+	state := "已暂停"
+	if e.audio.Waiting() {
+		state = "等待按键"
+	} else if playing {
+		state = "播放中"
+	}
+	if tick < 0 {
+		state += fmt.Sprintf(" · 预备 %.1f 拍", -tick/float64(e.doc.Song.PPQ))
+	}
+	if len(e.groups) > 0 && e.group >= len(e.groups) {
+		return state + " · 本段练习已完成"
+	}
+	return state
+}
+
+func (e *Editor) drawPracticeTimeline(p *ui.Painter, r ui.Rect, tick float64, playing bool) {
+	e.ensurePracticeTimeline()
 	e.ensureRollIndex()
 	if playing && e.drag == "" {
 		head := float32(tick)*e.zoom - e.scrollX
@@ -56,10 +93,15 @@ func (e *Editor) drawPracticeTimeline(p *ui.Painter, r ui.Rect, tick float64, pl
 	p.Clip(r, 0, func() {
 		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: rollHeaderHeight}, palette.Surface, 0)
 		left, right := float64(e.scrollX/e.zoom), float64((e.scrollX+r.W)/e.zoom)
+		nextLabelX := r.X + 4
 		barsInRange(e.meters, int64(math.Floor(left)), int64(math.Ceil(right)), func(tick, bar int64) {
 			x := r.X + float32(tick)*e.zoom - e.scrollX
 			p.Line(x, r.Y, x, r.Y+r.H, 1, palette.Grid)
-			p.Text(x+4, r.Y+4, fmt.Sprint(bar), 11, palette.Muted)
+			if x+4 >= nextLabelX {
+				label := fmt.Sprint(bar)
+				p.Text(x+4, r.Y+4, label, 11, palette.Muted)
+				nextLabelX = x + 4 + max(40, float32(len(label))*7+12)
+			}
 		})
 		laneY := r.Y + rollHeaderHeight + 8
 		laneHeight := max(float32(1), r.H-rollHeaderHeight-16)
@@ -69,10 +111,29 @@ func (e *Editor) drawPracticeTimeline(p *ui.Painter, r ui.Rect, tick float64, pl
 				break
 			}
 			x := r.X + float32(span.start)*e.zoom - e.scrollX
-			p.Fill(ui.Rect{X: x, Y: laneY, W: max(2, float32(span.end-span.start)*e.zoom), H: laneHeight}, palette.Accent, 3)
+			end := min(r.X+r.W, max(x+2, r.X+float32(span.end)*e.zoom-e.scrollX))
+			x = max(r.X, x)
+			if end > x {
+				p.Fill(ui.Rect{X: x, Y: laneY, W: end - x, H: laneHeight}, palette.Accent, 3)
+			}
+		}
+		if len(e.practiceSpans) == 0 {
+			p.Text(r.X+12, laneY+6, "暂无音符", 12, palette.Muted)
+		}
+		firstChord := sort.Search(len(e.practiceChords), func(i int) bool { return float64(e.practiceChords[i].Tick) >= left })
+		for _, chord := range e.practiceChords[firstChord:] {
+			if float64(chord.Tick) > right {
+				break
+			}
+			x := r.X + float32(chord.Tick)*e.zoom - e.scrollX
+			p.Line(x, laneY-4, x, laneY+laneHeight, 1, palette.Text)
 		}
 		x := r.X + float32(tick)*e.zoom - e.scrollX
-		p.Line(x, r.Y, x, r.Y+r.H, 2, palette.Selected)
+		if x >= r.X && x <= r.X+r.W {
+			x = max(r.X+1, min(r.X+r.W-1, x))
+			p.Line(x, r.Y, x, r.Y+r.H, 2, palette.Selected)
+			p.Fill(ui.Rect{X: x - 3, Y: r.Y, W: 6, H: 5}, palette.Selected, 1)
+		}
 		p.Line(r.X, r.Y+rollHeaderHeight, r.X+r.W, r.Y+rollHeaderHeight, 1, palette.Grid)
 		p.Stroke(r, palette.Grid, 0, 1)
 	})

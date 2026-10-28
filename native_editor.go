@@ -17,6 +17,7 @@ import (
 
 type Editor struct {
 	inputFocused, buildFocus               bool
+	focusRoll                              bool
 	benchmark                              bool
 	dragChanged                            bool
 	dragPlaying                            bool
@@ -34,6 +35,7 @@ type Editor struct {
 	rollEnds                               [][]int64
 	meters                                 []MeterPoint
 	practiceSpans                          []practiceSpan
+	practiceChords                         []Chord
 	win                                    *mygo.Window
 	doc                                    Document
 	audio                                  *AudioEngine
@@ -79,7 +81,7 @@ type appSettings struct {
 
 func newEditor() *Editor {
 	p := builtinProfile()
-	e := &Editor{doc: Document{Song: emptySong()}, selected: map[int]bool{}, zoom: 0.15, rowHeight: 20, scrollY: 36 * 20, grid: "1/4", label: "简谱", mode: "编辑", tonic: 60, follow: true, loopEnd: 1920, pressed: map[int]bool{}, keyDown: map[string]int{}, recordStart: map[int]int64{}, flashes: map[int]time.Time{}, fresh: map[int]bool{}, profiles: []GameProfile{p}, profileName: p.Name, state: p.InitialState, sampleRoot: 60, tempo: 120, meterNum: 4, meterDen: "4", buffer: "20", message: "打开曲谱，或输入 DoMiSo 后生成"}
+	e := &Editor{doc: Document{Song: emptySong()}, selected: map[int]bool{}, zoom: 0.15, rowHeight: 20, scrollY: 44 * 20, grid: "1/4", label: "简谱", mode: "编辑", tonic: 60, follow: true, loopEnd: 1920, pressed: map[int]bool{}, keyDown: map[string]int{}, recordStart: map[int]int64{}, flashes: map[int]time.Time{}, fresh: map[int]bool{}, profiles: []GameProfile{p}, profileName: p.Name, state: p.InitialState, sampleRoot: 60, tempo: 120, meterNum: 4, meterDen: "4", buffer: "20", message: "打开曲谱，或输入 DoMiSo 后生成"}
 	e.readSettings()
 	applyDefaultInstrument(&e.doc.Song)
 	ms := 20
@@ -281,6 +283,7 @@ func (e *Editor) load(path string) {
 func (e *Editor) installDocument(d Document) {
 	e.rollNotes = nil
 	e.practiceSpans = nil
+	e.focusRoll = true
 	applyDefaultInstrument(&d.Song)
 	e.doc = d
 	e.track = 0

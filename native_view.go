@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
 	"math"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -85,9 +86,9 @@ func (e *Editor) view(c *ui.Context) {
 	if playing || e.recording {
 		c.After(time.Second / 60)
 	}
-	root := ui.Column(c).Fill().Gap(6).Padding(8)
+	root := ui.Column(c).Fill().Gap(8).Padding(12)
 	root.Children(func() {
-		ui.Row(c).Gap(6).Wrap().Children(func() {
+		ui.Row(c).Gap(6).Wrap().Disabled(e.busy).Children(func() {
 			ui.Text(c, "DoMiSo").FontSize(18).Bold()
 			button(c, "打开", e.open)
 			button(c, "保存", func() { e.save(false) })
@@ -95,11 +96,15 @@ func (e *Editor) view(c *ui.Context) {
 			button(c, "导出 MIDI", func() { e.export(true) })
 			button(c, "导出原文", func() { e.export(false) })
 			ui.Divider(c)
-			button(c, "撤销", func() { e.history(false) })
-			button(c, "重做", func() { e.history(true) })
+			if ui.Button(c, "撤销").Disabled(e.mode != "编辑" || len(e.undo) == 0).Tooltip("撤销 · Ctrl+Z").Clicked() {
+				e.history(false)
+			}
+			if ui.Button(c, "重做").Disabled(e.mode != "编辑" || len(e.redo) == 0).Tooltip("重做 · Ctrl+Shift+Z / Ctrl+Y").Clicked() {
+				e.history(true)
+			}
 		})
-		ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
-			ui.Column(c).Grow(1).Gap(6).Children(func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Start).Children(func() {
+			ui.Column(c).Grow(1).Gap(8).Disabled(e.busy).Children(func() {
 				ui.Row(c).Children(func() {
 					previous := e.mode
 					if choice(c, &e.mode, "编辑", "播放", "练习") {
@@ -108,27 +113,27 @@ func (e *Editor) view(c *ui.Context) {
 				})
 				e.performanceBar(c)
 			})
-			ui.Column(c).Width(380).Gap(4).Children(func() { e.songInfo(c) })
+			ui.Scroll(c).Width(320).Height(76).Label("曲谱信息，可滚动查看").Children(func() {
+				ui.Column(c).Gap(4).Children(func() { e.songInfo(c) })
+			})
 		})
-		ui.Row(c).Gap(8).Wrap().Children(func() {
-			ui.Text(c, "吸附")
-			choice(c, &e.grid, "自由", "1/16", "1/8", "1/7", "1/6", "1/5", "1/4", "1/3", "1/2")
+		ui.Row(c).Gap(12).Wrap().Children(func() {
+			e.songSettings(c)
 			ui.Divider(c)
-			ui.Text(c, "标签")
-			choice(c, &e.label, "隐藏", "音名", "简谱", "按键")
-			ui.Divider(c)
-			ui.Text(c, "音频缓冲 ms")
-			if ui.Select(c, &e.buffer, []string{"20", "40", "80"}).Width(65).Changed() {
+			ui.Text(c, "缓冲")
+			if ui.Select(c, &e.buffer, []string{"20", "40", "80"}).Width(65).Label("音频缓冲，毫秒").Tooltip("较低缓冲降低延迟；出现杂音时增大。重启后生效").Changed() {
 				e.saveSettings()
 				e.message = "缓冲设置重启后生效"
 			}
+			ui.Text(c, "ms").TextColor(palette.Muted)
 		})
+		ui.Divider(c)
 		if e.mode == "练习" {
 			ui.Column(c).Width(380).Disabled(e.busy).Children(func() { e.sidebarInfo(c) })
 		}
 		ui.Row(c).Grow(1).MinHeight(200).Gap(8).AlignItems(ui.Stretch).Children(func() {
 			if e.mode != "练习" {
-				ui.Column(c).Width(380).Gap(8).Disabled(e.busy).Children(func() { e.sidebar(c) })
+				ui.Column(c).Width(280).Gap(8).Disabled(e.busy).Children(func() { e.sidebar(c) })
 			}
 			ui.Column(c).Grow(1).Gap(5).Children(func() {
 				if e.mode == "练习" {
@@ -136,10 +141,29 @@ func (e *Editor) view(c *ui.Context) {
 					e.keyboard(c, tick)
 					e.practiceControls(c)
 				} else {
+					ui.Row(c).Gap(8).Wrap().Children(func() {
+						ui.Text(c, "吸附").TextColor(palette.Muted)
+						choice(c, &e.grid, "自由", "1/16", "1/8", "1/7", "1/6", "1/5", "1/4", "1/3", "1/2")
+						ui.Divider(c)
+						ui.Text(c, "标签").TextColor(palette.Muted)
+						choice(c, &e.label, "隐藏", "音名", "简谱", "按键")
+					})
 					e.trackBar(c)
-					roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput).Draw(func(p *ui.Painter, r ui.Rect) { e.rollWidth, e.rollHeight = r.W, r.H; e.drawRoll(p, r, tick, playing) })
+					roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().FocusRing(false).Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput)
+					roll.Draw(func(p *ui.Painter, r ui.Rect) {
+						e.rollWidth, e.rollHeight = r.W, r.H
+						e.drawRoll(p, r, tick, playing)
+						if roll.FocusVisible() {
+							p.Stroke(r, palette.Accent, 0, 2)
+						}
+					})
 					e.buildFocus = e.buildFocus || roll.Focused()
 					e.keyboard(c, tick)
+					if e.mode == "编辑" {
+						ui.Text(c, "双击添加 · 拖动移动 · 右边缘调整时长 · 空白拖动框选 · Delete 删除").FontSize(12).TextColor(palette.Muted)
+					} else {
+						ui.Text(c, "只读播放 · Space 播放 / 暂停 · 滚轮滚动 · 顶部按钮缩放").FontSize(12).TextColor(palette.Muted)
+					}
 				}
 			})
 		})
@@ -171,9 +195,13 @@ func (e *Editor) sidebarInfo(c *ui.Context) {
 	}
 	ui.Row(c).Gap(8).Children(func() {
 		ui.Text(c, "曲谱").Bold()
-		if ui.Select(c, &e.sheet, names).Grow(1).Changed() {
+		selected := e.sheet
+		if selected == "" {
+			selected = names[0]
+		}
+		if ui.Select(c, &selected, names).Grow(1).Label("内置曲谱").Changed() {
 			for _, s := range e.sheets {
-				if s.Name == e.sheet && e.confirmUnsaved() {
+				if s.Name == selected && e.confirmUnsaved() {
 					text, err := (&AppService{}).LoadSheet(s.Path)
 					if err != nil {
 						e.message = err.Error()
@@ -191,6 +219,7 @@ func (e *Editor) sidebarInfo(c *ui.Context) {
 					}
 					e.stop()
 					e.installDocument(Document{Song: song, Notation: text, Generated: true})
+					e.sheet = selected
 					break
 				}
 			}
@@ -199,27 +228,30 @@ func (e *Editor) sidebarInfo(c *ui.Context) {
 }
 
 func (e *Editor) songInfo(c *ui.Context) {
-	ui.Text(c, "曲谱信息").Bold()
+	ui.Text(c, "曲谱信息").FontSize(12).TextColor(palette.Muted)
+	if e.doc.Meta.Title == "" {
+		ui.Text(c, "未命名曲谱").Bold()
+	}
 	if e.doc.Meta.Title != "" {
-		ui.Text(c, e.doc.Meta.Title)
+		ui.Text(c, e.doc.Meta.Title).Bold().SingleLine().Tooltip(e.doc.Meta.Title)
 	}
 	if e.doc.Meta.Composer != "" {
-		ui.Text(c, "记谱 / 作曲："+e.doc.Meta.Composer)
+		ui.Text(c, "记谱 / 作曲："+e.doc.Meta.Composer).SingleLine().Tooltip(e.doc.Meta.Composer)
 	}
 	if e.doc.Meta.Arranger != "" {
-		ui.Text(c, "编曲："+e.doc.Meta.Arranger)
+		ui.Text(c, "编曲："+e.doc.Meta.Arranger).SingleLine().Tooltip(e.doc.Meta.Arranger)
 	}
 	if e.doc.Meta.Description != "" {
-		ui.Scroll(c).Height(48).Children(func() {
-			ui.Text(c, e.doc.Meta.Description).FontSize(12).TextColor(palette.Muted)
-		})
+		ui.Text(c, e.doc.Meta.Description).FontSize(12).TextColor(palette.Muted)
 	}
-	ui.Divider(c)
-	ui.Column(c).Gap(4).Disabled(e.busy || e.mode != "编辑").Children(func() {
-		ui.Row(c).Gap(8).Wrap().Children(func() {
+}
+
+func (e *Editor) songSettings(c *ui.Context) {
+	ui.Row(c).Gap(12).Disabled(e.busy || e.mode != "编辑").Children(func() {
+		ui.Row(c).Gap(8).Children(func() {
 			ui.Row(c).Gap(4).Children(func() {
 				ui.Text(c, "BPM")
-				if ui.NumberInput(c, &e.tempo, 20, 400, 1).Width(100).Changed() {
+				if ui.NumberInput(c, &e.tempo, 20, 400, 1).Width(140).Label("每分钟拍数 BPM").Changed() {
 					e.checkpoint()
 					e.doc.Song.SetTempo(e.tempo)
 					e.changed(true)
@@ -227,15 +259,15 @@ func (e *Editor) songInfo(c *ui.Context) {
 			})
 			ui.Row(c).Gap(4).Children(func() {
 				ui.Text(c, "拍号")
-				if ui.NumberInput(c, &e.meterNum, 1, 32, 1).Width(80).Label("拍号分子").Changed() {
+				if ui.NumberInput(c, &e.meterNum, 1, 32, 1).Width(140).Label("拍号分子").Changed() {
 					e.setMeter()
 				}
-				if ui.Select(c, &e.meterDen, []string{"2", "4", "8", "16"}).Width(50).Changed() {
+				if ui.Select(c, &e.meterDen, []string{"2", "4", "8", "16"}).Width(58).Label("拍号分母").Changed() {
 					e.setMeter()
 				}
 			})
 		})
-		ui.Row(c).Gap(4).Wrap().Children(func() {
+		ui.Row(c).Gap(4).Children(func() {
 			ui.Text(c, "主音")
 			if e.tonicInput == "" && e.tonicInputKey == 0 || e.tonicInputKey != e.tonic {
 				e.tonicInput = tonicName(int(e.tonic))
@@ -253,7 +285,7 @@ func (e *Editor) songInfo(c *ui.Context) {
 
 func (e *Editor) sidebarTracks(c *ui.Context) {
 	ui.Text(c, "轨道").Bold()
-	ui.Scroll(c).Height(120).MinHeight(120).Shrink(0).Children(func() {
+	ui.Scroll(c).Height(128).MinHeight(128).Shrink(0).Children(func() {
 		for i := range e.doc.Song.Tracks {
 			if len(e.doc.Song.Tracks[i].Notes) == 0 && i != e.track {
 				continue
@@ -265,11 +297,20 @@ func (e *Editor) sidebarTracks(c *ui.Context) {
 				if i == e.track {
 					label = "▸ " + label
 				}
-				button(c, label, func() { e.releaseKeys(); e.track = i; clear(e.selected) })
+				item := ui.Button(c, label).WidthPercent(100).Tooltip(fmt.Sprintf("%s · %d 个音符", t.Name, len(t.Notes)))
+				if i == e.track {
+					item.TextColor(palette.Accent)
+				}
+				if item.Clicked() {
+					e.releaseKeys()
+					e.track = i
+					e.focusRoll = true
+					clear(e.selected)
+				}
 			}()
 		}
 	})
-	ui.Row(c).Gap(4).Wrap().Children(func() {
+	ui.Row(c).Gap(4).Disabled(e.mode != "编辑").Children(func() {
 		button(c, "新增", func() {
 			e.checkpoint()
 			e.stop()
@@ -278,7 +319,7 @@ func (e *Editor) sidebarTracks(c *ui.Context) {
 			e.changed(true)
 			e.configureAudio()
 		})
-		button(c, "删除", func() {
+		if ui.Button(c, "删除").Disabled(len(e.doc.Song.Tracks) <= 1).Tooltip("删除当前轨道及其音符；可撤销").Clicked() {
 			if len(e.doc.Song.Tracks) > 1 {
 				e.checkpoint()
 				e.stop()
@@ -288,11 +329,11 @@ func (e *Editor) sidebarTracks(c *ui.Context) {
 				e.changed(true)
 				e.configureAudio()
 			}
-		})
-		if ui.Button(c, "↑").Width(27).Label("上移轨道").Clicked() {
+		}
+		if ui.Button(c, "↑").Width(27).Disabled(e.track == 0).Label("上移轨道").Tooltip("上移轨道").Clicked() {
 			e.moveTrack(-1)
 		}
-		if ui.Button(c, "↓").Width(27).Label("下移轨道").Clicked() {
+		if ui.Button(c, "↓").Width(27).Disabled(e.track == len(e.doc.Song.Tracks)-1).Label("下移轨道").Tooltip("下移轨道").Clicked() {
 			e.moveTrack(1)
 		}
 	})
@@ -301,20 +342,19 @@ func (e *Editor) sidebarTracks(c *ui.Context) {
 func (e *Editor) sidebar(c *ui.Context) {
 	e.sidebarInfo(c)
 	ui.Divider(c)
-	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).Gap(8).Children(func() {
-			ui.Column(c).Gap(6).Children(func() { e.sidebarTracks(c) })
-			ui.Divider(c)
-			ui.Text(c, "DoMiSo 文本").Bold()
-			ui.Column(c).Grow(1).Gap(6).Disabled(e.mode != "编辑").Children(func() {
-				if ui.TextArea(c, &e.doc.Notation).Height(104).MinHeight(100).MaxHeightPercent(50).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
-					e.changed(false)
-					e.doc.OutOfSync = e.doc.Notation != ""
-				}
-				if ui.Button(c, "从文本重新生成 MIDI").Width(166).Clicked() {
-					e.regenerate()
-				}
-			})
+	ui.Column(c).Grow(1).MinHeight(0).Gap(8).Children(func() {
+		ui.Column(c).Gap(6).Children(func() { e.sidebarTracks(c) })
+		ui.Divider(c)
+		ui.Text(c, "DoMiSo 文本").Bold()
+		ui.Text(c, "参考文本不随音符编辑更新").FontSize(12).TextColor(palette.Muted)
+		ui.Column(c).Grow(1).MinHeight(0).Gap(6).Disabled(e.mode != "编辑").Children(func() {
+			if ui.TextArea(c, &e.doc.Notation).Grow(1).MinHeight(100).Font("monospace").Label("DoMiSo 乐谱源文").Changed() {
+				e.changed(false)
+				e.doc.OutOfSync = e.doc.Notation != ""
+			}
+			if ui.Button(c, "从文本重新生成 MIDI").Disabled(strings.TrimSpace(e.doc.Notation) == "").Tooltip("以文本替换现有 MIDI；替换编辑内容前会确认").Clicked() {
+				e.regenerate()
+			}
 		})
 	})
 }
@@ -341,7 +381,7 @@ func (e *Editor) trackBar(c *ui.Context) {
 	t := &e.doc.Song.Tracks[e.track]
 	ui.Row(c).Gap(5).Wrap().Disabled(e.busy).Children(func() {
 		name := t.Name
-		if ui.TextInput(c, &name).Width(130).Label("轨道名称").Changed() {
+		if ui.TextInput(c, &name).Width(130).Label("轨道名称").Disabled(e.mode != "编辑").Changed() {
 			e.checkpoint()
 			t.Name = name
 			e.changed(true)
@@ -358,10 +398,12 @@ func (e *Editor) trackBar(c *ui.Context) {
 			t.Settings.Solo = solo
 			e.changed(true)
 		}
+		ui.Text(c, "音量").FontSize(12).TextColor(palette.Muted)
 		if ui.Slider(c, &t.Settings.Volume, 0, 1).Width(90).Label("轨道音量").Changed() {
 			e.changed(false)
 			e.audio.Update(e.doc.Song)
 		}
+		ui.Textf(c, "%.0f%%", t.Settings.Volume*100).FontSize(12).TextColor(palette.Muted)
 	})
 	ui.Divider(c)
 	ui.Row(c).Gap(8).Wrap().Disabled(e.busy).Children(func() {
@@ -378,7 +420,7 @@ func (e *Editor) trackBar(c *ui.Context) {
 						}
 					}
 				}
-				if ui.Select(c, &selected, names).Width(320).Label("SoundFont 音色，显示实际 Bank 和 Program，数值从 0 开始").Changed() {
+				if ui.Select(c, &selected, names).Grow(1).MinWidth(180).Label("SoundFont 音色，显示实际 Bank 和 Program，数值从 0 开始").Changed() {
 					if selected == names[0] {
 						e.setSoundFontPreset(nil)
 					} else {
@@ -395,29 +437,29 @@ func (e *Editor) trackBar(c *ui.Context) {
 				ui.Text(c, "音源不可用，内置音回退试听").FontSize(12).TextColor(palette.Muted)
 			}
 		}
-	})
-	if t.Settings.Instrument.Kind == "sample" || t.Settings.Instrument.Kind == "pack" {
-		ui.Row(c).Gap(8).Wrap().Disabled(e.busy).Children(func() {
-			ui.Text(c, "采样原始音高")
-			if ui.NumberInput(c, &e.sampleRoot, 0, 127, 1).Width(140).Changed() {
-				if t.Settings.Instrument.Kind == "sample" {
+		if t.Settings.Instrument.Kind == "sample" || t.Settings.Instrument.Kind == "pack" {
+			if t.Settings.Instrument.Kind == "sample" {
+				ui.Text(c, "原始 MIDI 音高")
+				root := float64(t.Settings.Instrument.RootKey)
+				if ui.NumberInput(c, &root, 0, 127, 1).Width(140).Label("采样原始 MIDI 音高").Tooltip("C4 = 60；填写采样文件录制时的音高").Changed() {
 					e.checkpoint()
-					t.Settings.Instrument.RootKey = int(e.sampleRoot)
+					e.sampleRoot = root
+					t.Settings.Instrument.RootKey = int(root)
 					e.changed(false)
 					e.configureAudio()
 				}
 			}
 			gated := t.Settings.Instrument.Gated
-			if ui.Checkbox(c, &gated, "随音符结束").Changed() {
+			if ui.Checkbox(c, &gated, "随音符结束").Tooltip("关闭：自然衰减；开启：松键后淡出").Changed() {
 				e.checkpoint()
 				t.Settings.Instrument.Gated = gated
 				e.changed(false)
 				e.configureAudio()
 			}
-		})
-	}
+		}
+	})
 	ui.Row(c).Gap(6).Wrap().Children(func() {
-		ui.Text(c, "音源: "+instrumentLabel(t.Settings.Instrument)).FontSize(12).TextColor(palette.Muted)
+		ui.Text(c, "音源: "+instrumentLabel(t.Settings.Instrument)).FontSize(12).TextColor(palette.Muted).SingleLine().Tooltip(t.Settings.Instrument.File)
 		ui.Spacer(c)
 		if len(e.selected) > 0 {
 			var vel float64 = 100
@@ -428,7 +470,7 @@ func (e *Editor) trackBar(c *ui.Context) {
 				}
 			}
 			ui.Textf(c, "已选 %d  力度", len(e.selected))
-			if ui.NumberInput(c, &vel, 1, 127, 1).Width(140).Changed() {
+			if ui.NumberInput(c, &vel, 1, 127, 1).Width(140).Label("所选音符力度").Disabled(e.mode != "编辑").Changed() {
 				e.edit(func() {
 					for i := range t.Notes {
 						if e.selected[t.Notes[i].ID] {
@@ -437,7 +479,9 @@ func (e *Editor) trackBar(c *ui.Context) {
 					}
 				})
 			}
-			button(c, "删除音符", e.deleteSelection)
+			if ui.Button(c, "删除音符").Disabled(e.mode != "编辑").Clicked() {
+				e.deleteSelection()
+			}
 		}
 	})
 }
@@ -446,9 +490,9 @@ func instrumentLabel(in Instrument) string {
 		return "内置回退音（未加载音源）"
 	}
 	if in.Kind == "soundfont" && in.Preset != nil {
-		return fmt.Sprintf("%s · Bank %d / Program %d", in.File, in.Preset.Bank, in.Preset.Program)
+		return fmt.Sprintf("%s · Bank %d / Program %d", filepath.Base(in.File), in.Preset.Bank, in.Preset.Program)
 	}
-	return in.File
+	return filepath.Base(in.File)
 }
 func (e *Editor) performanceBar(c *ui.Context) {
 	ui.Row(c).Gap(6).Wrap().Disabled(e.busy).Children(func() {
@@ -456,7 +500,7 @@ func (e *Editor) performanceBar(c *ui.Context) {
 		for _, p := range e.profiles {
 			names = append(names, p.Name)
 		}
-		if ui.Select(c, &e.profileName, names).Width(160).Changed() {
+		if ui.Select(c, &e.profileName, names).Width(160).Label("按键映射方案").Changed() {
 			e.releaseKeys()
 			performance.stop()
 			performance.mu.Lock()
@@ -499,6 +543,14 @@ const (
 func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) {
 	e.ensureRollIndex()
 	e.ensureLabelCache()
+	if e.focusRoll {
+		key := 60
+		if notes := e.rollNotes[e.track]; len(notes) > 0 {
+			key = int(notes[0].Key)
+		}
+		e.scrollY = float32(pianoHigh-key)*e.rowHeight - (r.H-rollHeaderHeight-e.rowHeight)/2
+		e.focusRoll = false
+	}
 	e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-r.H+rollHeaderHeight), e.scrollY))
 	e.scrollX = max(-float32(e.doc.Song.BarTicks()*2)*e.zoom, e.scrollX)
 	if playing && e.drag == "" {
@@ -988,7 +1040,7 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 				active[int(n.Key)] = true
 			}
 		}
-		if playing && e.drag == "" && tick >= e.displayTick {
+		if e.mode != "练习" && playing && e.drag == "" && tick >= e.displayTick {
 			for _, n := range e.visibleNotes(i, e.displayTick, tick) {
 				if float64(n.Tick) <= tick && (float64(n.Tick) > e.displayTick || !e.displayPlaying && float64(n.Tick) == e.displayTick) {
 					e.flashes[int(n.Key)] = time.Now()
@@ -997,7 +1049,7 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 		}
 	}
 	e.displayTick, e.displayPlaying = tick, playing
-	keyboard := ui.Box(c).Focusable().Label("实体键盘；映射按键与音符提示").Clip()
+	keyboard := ui.Box(c).Focusable().FocusRing(false).Label("实体键盘；映射按键与音符提示").Tooltip("按物理 ANSI 键位演奏 · Space 播放 / 暂停 · 练习模式不录音").Clip()
 	if e.mode == "练习" {
 		keyboard.Grow(1)
 	} else {
@@ -1007,6 +1059,13 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 		bounds, width, rowHeight := keyboardGeometry(r, e.mode == "练习")
 		scale := rowHeight / 30
 		now := time.Now()
+		waitHints := e.mode == "练习" && e.waitMode
+		var target [128]bool
+		if waitHints && e.group < len(e.groups) {
+			for _, note := range e.groups[e.group].Notes {
+				target[note] = true
+			}
+		}
 		for row, keys := range keyboardRows {
 			x := bounds.X
 			for _, key := range keys {
@@ -1021,11 +1080,18 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 							c.After(time.Second / 60)
 						}
 					}
+					if waitHints && e.pressed[n] {
+						color = color.Mix(palette.Selected, 0.35)
+					}
 				}
 				painter.Fill(rect, color, 4*scale)
 				outline := palette.Grid
 				stroke := float32(1)
-				if bound && (e.pressed[n] || active[n]) {
+				emphasized := bound && (e.pressed[n] || active[n])
+				if waitHints {
+					emphasized = bound && target[n]
+				}
+				if emphasized {
 					outline = palette.Accent
 					stroke = 2
 				}
@@ -1039,6 +1105,9 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 					painter.Text(rect.X+5*scale, rect.Y+13*scale, noteLabel(n, "简谱", int(e.tonic), p, e.state), 10*scale, palette.Muted)
 				}
 			}
+		}
+		if keyboard.FocusVisible() {
+			painter.Stroke(r, palette.Accent, 4, 2)
 		}
 	})
 	e.buildFocus = e.buildFocus || keyboard.Focused()

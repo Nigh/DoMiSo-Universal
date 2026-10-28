@@ -4,16 +4,18 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"github.com/ebitengine/oto/v3"
 	"image/png"
 	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ebitengine/oto/v3"
 
 	"github.com/egoist/mygo/ui"
 	"gitlab.com/gomidi/midi/v2/smf"
@@ -303,9 +305,6 @@ func TestNativeView(t *testing.T) {
 	if tester.Image().Bounds().Dx() != 1380 {
 		t.Fatal("render")
 	}
-	if err := tester.Click("撤销"); err != nil {
-		t.Fatal(err)
-	}
 	if os.Getenv("DOMISO_RENDER_PREVIEW") != "" {
 		os.MkdirAll("bin", 0755)
 		midi, err := e.doc.Song.MIDI()
@@ -423,7 +422,7 @@ func TestSpacePlaysOutsideTextEditors(t *testing.T) {
 	e.doc.Song = testSong()
 	e.audio.Configure(e.doc.Song)
 	tester := ui.NewTester(e.view, 1380, 900)
-	for _, label := range []string{"撤销", "跟随", "重做"} {
+	for _, label := range []string{"静音", "跟随", "独奏"} {
 		if err := tester.Click(label); err != nil {
 			t.Fatal(err)
 		}
@@ -764,5 +763,98 @@ func TestNativeRollGridAndKeyShadingOnFractionalScroll(t *testing.T) {
 	black := tester.Image().RGBAAt(70, 75)
 	if white.R != palette.Background.R || black.R != palette.Surface.R {
 		t.Fatalf("wrong white/black lane shades: white=%v black=%v", white, black)
+	}
+}
+
+func TestPlaybackProtectsTrackStructure(t *testing.T) {
+	e := newEditor()
+	e.doc.Song = testSong()
+	e.doc.Song.Tracks = append(e.doc.Song.Tracks, newTrack("Second"))
+	e.mode = "播放"
+	before := cloneSong(e.doc.Song)
+	tester := ui.NewTester(e.view, 1120, 760)
+	for _, label := range []string{"新增", "删除", "上移轨道", "下移轨道"} {
+		if err := tester.Click(label); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tester.Click("轨道名称"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Type("changed")
+	if !reflect.DeepEqual(e.doc.Song, before) || e.doc.Dirty {
+		t.Fatal("playback allowed track structure or name edits")
+	}
+}
+
+func TestTrackSelectionRevealsNotesWithoutOverridingScroll(t *testing.T) {
+	e := newEditor()
+	e.doc.Song = testSong()
+	high := newTrack("High")
+	high.Notes = []Note{{ID: 4, Key: 100, Duration: 480, Velocity: 100}}
+	e.doc.Song.Tracks = append(e.doc.Song.Tracks, high)
+	tester := ui.NewTester(e.view, 1120, 760)
+	if err := tester.Click("2  High  (1)"); err != nil {
+		t.Fatal(err)
+	}
+	y := rollHeaderHeight + float32(pianoHigh-100)*e.rowHeight - e.scrollY
+	if e.track != 1 || y < rollHeaderHeight || y+e.rowHeight > e.rollHeight {
+		t.Fatal("selected track notes remain outside viewport")
+	}
+	e.scrollY += 40
+	scroll := e.scrollY
+	tester.Frame()
+	if e.scrollY != scroll {
+		t.Fatal("track focus reset manual scrolling")
+	}
+}
+
+func TestMetadataAndSampleControlsKeepKeyboardVisible(t *testing.T) {
+	e := newEditor()
+	e.doc.Song = testSong()
+	e.doc.Meta.Title = strings.Repeat("Title ", 20)
+	e.doc.Meta.Composer = "Composer"
+	e.doc.Meta.Arranger = "Arranger"
+	e.doc.Meta.Description = strings.Repeat("Description ", 40)
+	e.doc.Song.Tracks[0].Settings.Instrument = Instrument{Kind: "sample", File: "sample.wav", RootKey: 48}
+	e.selected[1] = true
+	tester := ui.NewTester(e.view, 1120, 760)
+	keyboard, ok := tester.Find("实体键盘；映射按键与音符提示")
+	if !ok || keyboard.H < 150 {
+		t.Fatalf("metadata or sample controls compress physical keyboard: %v", keyboard)
+	}
+	follow, ok := tester.Find("跟随")
+	if !ok || follow.Y < keyboard.Y+keyboard.H || follow.Y+follow.H > 760 {
+		t.Fatalf("transport overlaps keyboard or leaves viewport: %v", follow)
+	}
+}
+
+func TestNotationAreaFillsRemainingSidebarHeight(t *testing.T) {
+	for _, mode := range []string{"编辑", "播放"} {
+		t.Run(mode, func(t *testing.T) {
+			e := newEditor()
+			e.mode = mode
+			e.doc.Notation = "1=C4\n1 2 3"
+			tester := ui.NewTester(e.view, 1120, 760)
+			area, ok := tester.Find("DoMiSo 乐谱源文")
+			if !ok {
+				t.Fatal("notation area missing")
+			}
+			button, ok := tester.Find("从文本重新生成 MIDI")
+			if !ok {
+				t.Fatal("regenerate button missing")
+			}
+			tester.SetSize(1120, 900)
+			taller, _ := tester.Find("DoMiSo 乐谱源文")
+			lowerButton, _ := tester.Find("从文本重新生成 MIDI")
+			if math.Abs(float64(taller.H-area.H-140)) > 1 || math.Abs(float64(lowerButton.Y-button.Y-140)) > 1 {
+				t.Fatalf("notation did not absorb extra window height: before=%v after=%v", area, taller)
+			}
+			follow, ok := tester.Find("跟随")
+			gap := follow.Y - lowerButton.Y - lowerButton.H
+			if !ok || gap < 0 || lowerButton.Y < taller.Y+taller.H {
+				t.Fatalf("notation, regenerate button and transport overlap: area=%v button=%v transport=%v", taller, lowerButton, follow)
+			}
+		})
 	}
 }

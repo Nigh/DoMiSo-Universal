@@ -29,7 +29,13 @@ Select a track, double-click empty space to add a note, drag notes to move them 
 
 Scroll pans vertically; Shift+scroll pans horizontally; Ctrl+scroll zooms. Drag the ruler to seek; Ctrl/Alt click sets loop start/end. Playback mode disables note editing and lets dragging pan/seek. Two pre-roll bars do not change MIDI note positions.
 
+The compact header groups tempo, meter, tonic and audio buffering. Snap and note-label controls stay above the roll; the left column keeps sheets, tracks and reference text together. Opening a document or selecting a track reveals its first visible-range note without overriding later manual scrolling.
+
+Playback mode protects track structure and names while keeping mute, solo, volume and instrument controls available. Unavailable undo, redo and track actions are disabled. The bottom transport shows elapsed/total time from the tempo map and bar numbers from the meter map.
+
 The default Genshin mapping uses Q–U, A–J and Z–M rows. Practice requires the exact chord and a fresh press. Windows auto-play: prepare the sequence, focus a whitelisted game, then Ctrl+Alt+F8 toggles playback; Ctrl+Alt+F9 stops and releases injected keys.
+
+In wait practice, PC-keyboard outlines identify the next chord to press. Completing a chord immediately moves the outlines to the next chord, even while previous keys remain held; held keys use fill feedback instead. Repeated chords require a fresh press. The full-track timeline marks every audible chord onset with a vertical line, including onsets inside sustained notes, without a moving target label. The controls below the keyboard separate pending and upcoming chords. Empty songs, completed practice, wait mode and game monitoring have explicit status guidance.
 
 ## Instruments and projects
 
