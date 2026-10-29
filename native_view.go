@@ -149,7 +149,7 @@ func (e *Editor) view(c *ui.Context) {
 						choice(c, &e.label, "隐藏", "音名", "简谱", "按键")
 					})
 					e.trackBar(c)
-					roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().FocusRing(false).Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").HandleInput(e.rollInput)
+					roll := ui.Box(c).Grow(1).MinHeight(140).Clip().Focusable().FocusRing(false).Label("钢琴卷帘；顶部时间轴右侧可横向或纵向缩放，双击创建音符，拖动移动，右边缘改变时长，空白拖动框选").Tooltip("Ctrl+滚轮：以鼠标光标为中心横向缩放；Ctrl+Shift+滚轮：以视口中心纵向缩放；Shift+滚轮：横向滚动").HandleInput(e.rollInput)
 					roll.Draw(func(p *ui.Painter, r ui.Rect) {
 						e.rollWidth, e.rollHeight = r.W, r.H
 						e.drawRoll(p, r, tick, playing)
@@ -160,9 +160,9 @@ func (e *Editor) view(c *ui.Context) {
 					e.buildFocus = e.buildFocus || roll.Focused()
 					e.keyboard(c, tick)
 					if e.mode == "编辑" {
-						ui.Text(c, "双击添加 · 拖动移动 · 右边缘调整时长 · 空白拖动框选 · Delete 删除").FontSize(12).TextColor(palette.Muted)
+						ui.Text(c, "双击添加 · 拖动编辑 · Delete 删除 · Ctrl+滚轮 横缩放 · Ctrl+Shift+滚轮 纵缩放").FontSize(12).TextColor(palette.Muted)
 					} else {
-						ui.Text(c, "只读播放 · Space 播放 / 暂停 · 滚轮滚动 · 顶部按钮缩放").FontSize(12).TextColor(palette.Muted)
+						ui.Text(c, "只读播放 · Space 播放 / 暂停 · Ctrl+滚轮 横缩放 · Ctrl+Shift+滚轮 纵缩放").FontSize(12).TextColor(palette.Muted)
 					}
 				}
 			})
@@ -302,8 +302,10 @@ func (e *Editor) sidebarTracks(c *ui.Context) {
 					item.TextColor(palette.Accent)
 				}
 				if item.Clicked() {
-					e.releaseKeys()
-					e.track = i
+					if e.track != i {
+						e.releaseKeys()
+						e.track = i
+					}
 					e.focusRoll = true
 					clear(e.selected)
 				}
@@ -420,7 +422,7 @@ func (e *Editor) trackBar(c *ui.Context) {
 						}
 					}
 				}
-				if ui.Select(c, &selected, names).Grow(1).MinWidth(180).Label("SoundFont 音色，显示实际 Bank 和 Program，数值从 0 开始").Changed() {
+				if ui.Select(c, &selected, names).Width(280).Label("SoundFont 音色，显示实际 Bank 和 Program，数值从 0 开始").Changed() {
 					if selected == names[0] {
 						e.setSoundFontPreset(nil)
 					} else {
@@ -552,12 +554,13 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 		e.focusRoll = false
 	}
 	e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-r.H+rollHeaderHeight), e.scrollY))
-	e.scrollX = max(-float32(e.doc.Song.BarTicks()*2)*e.zoom, e.scrollX)
-	if playing && e.drag == "" {
+	e.clampRollScroll()
+	if (playing || e.revealPlayhead) && e.drag == "" {
 		head := float32(tick)*e.zoom - e.scrollX
 		if e.follow || head < 0 || head >= r.W-rollKeysWidth {
 			e.scrollX = float32(tick)*e.zoom - (r.W-rollKeysWidth)/2
 		}
+		e.revealPlayhead = false
 	}
 	p.Fill(r, palette.Background, 0)
 	p.Clip(r, 0, func() {
@@ -574,7 +577,7 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 					shade = palette.Surface
 				}
 				p.Fill(ui.Rect{X: r.X + rollKeysWidth, Y: y, W: r.W - rollKeysWidth, H: e.rowHeight}, shade, 0)
-				p.Line(r.X+rollKeysWidth, y, r.X+r.W, y, 1, palette.Grid)
+				rollLine(p, r.X+rollKeysWidth, y, r.X+r.W, y, 1, palette.Grid)
 			}
 			// Grid density follows zoom; drawing is bounded by the visible viewport.
 			step := e.doc.Song.PPQ
@@ -587,12 +590,12 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 				if x < r.X+rollKeysWidth {
 					continue
 				}
-				p.Line(x, r.Y+rollHeaderHeight, x, r.Y+r.H, 1, palette.Grid)
+				rollLine(p, x, r.Y+rollHeaderHeight, x, r.Y+r.H, 1, palette.Grid)
 			}
 			barsInRange(e.meters, int64(e.scrollX/e.zoom), int64((e.scrollX+r.W)/e.zoom), func(tick, bar int64) {
 				x := r.X + rollKeysWidth + float32(tick)*e.zoom - e.scrollX
 				if x >= r.X+rollKeysWidth {
-					p.Line(x, r.Y+rollHeaderHeight, x, r.Y+r.H, 1, palette.Muted)
+					rollLine(p, x, r.Y+rollHeaderHeight, x, r.Y+r.H, 1, palette.Muted)
 				}
 			})
 			drawNote := func(n Note, ti int, color ui.Color) {
@@ -610,8 +613,7 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 				}
 				p.Fill(nr, color, 3)
 				if ti == e.track && nr.W > 18 && e.label != "隐藏" {
-					text := e.labelCache[n.Key]
-					p.Clip(nr, 0, func() { p.Text(max(nr.X+4, r.X+rollKeysWidth+2), nr.Y+2, text, 11, palette.Background) })
+					rollText(p, nr, max(nr.X+4, r.X+rollKeysWidth+2), e.labelCache[n.Key], 11, palette.Background)
 				}
 			}
 			for ti := range e.doc.Song.Tracks {
@@ -640,7 +642,7 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 			}
 			x := r.X + rollKeysWidth + float32(tick)*e.zoom - e.scrollX
 			if x >= r.X+rollKeysWidth {
-				p.Line(x, r.Y+rollHeaderHeight, x, r.Y+r.H, 2, palette.Selected)
+				rollLine(p, x, r.Y+rollHeaderHeight, x, r.Y+r.H, 2, palette.Selected)
 			}
 		})
 		p.Clip(ui.Rect{X: r.X, Y: r.Y + rollHeaderHeight, W: rollKeysWidth, H: max(0, r.H-rollHeaderHeight)}, 0, func() {
@@ -660,9 +662,6 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 				rect := ui.Rect{X: r.X, Y: top, W: rollKeysWidth, H: bottom - top}
 				p.Fill(rect, palette.Text, 0)
 				p.Stroke(rect, palette.Grid, 0, 1)
-				if key%12 == 0 || key == pianoLow {
-					p.Text(r.X+3, y+3, fmt.Sprintf("%s%d", []string{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}[key%12], key/12-1), 10, palette.Surface)
-				}
 			}
 			for key := pianoLow; key <= pianoHigh; key++ {
 				if !isBlack(key) {
@@ -670,6 +669,14 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 				}
 				y := r.Y + rollHeaderHeight + float32(pianoHigh-key)*e.rowHeight - e.scrollY
 				p.Fill(ui.Rect{X: r.X + 20, Y: y + 1, W: 32, H: e.rowHeight - 2}, palette.Background, 1)
+			}
+			// Labels belong to pitch rows, not the taller, overlapping white-key shapes.
+			for key := pianoLow; key <= pianoHigh; key++ {
+				if key%12 != 0 && key != pianoLow {
+					continue
+				}
+				y := r.Y + rollHeaderHeight + float32(pianoHigh-key)*e.rowHeight - e.scrollY
+				rollText(p, ui.Rect{X: r.X, Y: y, W: 20, H: e.rowHeight}, r.X+3, tonicName(key), 10, palette.Surface)
 			}
 		})
 		controlsVisible := r.W >= rollKeysWidth+rollZoomControlsWidth
@@ -687,11 +694,11 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 		})
 		x := r.X + rollKeysWidth + float32(tick)*e.zoom - e.scrollX
 		if x >= r.X+rollKeysWidth {
-			p.Line(x, r.Y, x, r.Y+rollHeaderHeight, 2, palette.Selected)
+			rollLine(p, x, r.Y, x, r.Y+rollHeaderHeight, 2, palette.Selected)
 		}
 		p.Fill(ui.Rect{X: r.X, Y: r.Y, W: rollKeysWidth, H: rollHeaderHeight}, palette.Surface, 0)
-		p.Line(r.X, r.Y+rollHeaderHeight, r.X+r.W, r.Y+rollHeaderHeight, 1, palette.Muted)
-		p.Line(r.X+rollKeysWidth, r.Y, r.X+rollKeysWidth, r.Y+r.H, 1, palette.Muted)
+		rollLine(p, r.X, r.Y+rollHeaderHeight, r.X+r.W, r.Y+rollHeaderHeight, 1, palette.Muted)
+		rollLine(p, r.X+rollKeysWidth, r.Y, r.X+rollKeysWidth, r.Y+r.H, 1, palette.Muted)
 		if controlsVisible {
 			for i, label := range [...]string{"横−", "横+", "纵−", "纵+"} {
 				button := rollZoomButton(r.W, i)
@@ -705,6 +712,41 @@ func (e *Editor) drawRoll(p *ui.Painter, r ui.Rect, tick float64, playing bool) 
 		p.Stroke(r, palette.Grid, 0, 1)
 	})
 }
+
+// Round thickness once, not both edges independently: fractional HiDPI scroll
+// must move a line without alternating its physical pixel width.
+func rollLine(p *ui.Painter, x0, y0, x1, y1, width float32, color ui.Color) {
+	scale := p.Scale()
+	pixels := max(1, float32(math.Round(float64(width*scale))))
+	r := ui.Rect{X: min(x0, x1), Y: min(y0, y1), W: absf(x1 - x0), H: absf(y1 - y0)}
+	if r.W < r.H {
+		r.X = float32(math.Round(float64(r.X*scale-pixels/2))) / scale
+		r.W = pixels / scale
+	} else {
+		r.Y = float32(math.Round(float64(r.Y*scale-pixels/2))) / scale
+		r.H = pixels / scale
+	}
+	p.Fill(r, color, 0)
+}
+
+func rollText(p *ui.Painter, r ui.Rect, x float32, text string, size float32, color ui.Color) {
+	if text == "" {
+		return
+	}
+	// MeasureText keeps the theme's base line height even for a smaller Span.
+	// Use the actual font's metrics, matching Painter.Text's base font size.
+	metrics := (ui.Font{Size: size}).Metrics()
+	height := metrics.Ascent + metrics.Descent + metrics.LineGap
+	if height > r.H {
+		size *= r.H / height
+		metrics = (ui.Font{Size: size}).Metrics()
+		height = metrics.Ascent + metrics.Descent + metrics.LineGap
+	}
+	p.Clip(r, 0, func() {
+		p.Text(x, r.Y+(r.H-height)/2, text, size, color)
+	})
+}
+
 func rollZoomButton(width float32, index int) ui.Rect {
 	return ui.Rect{X: width - rollZoomControlsWidth + float32(index)*29, Y: 2, W: 27, H: 22}
 }
@@ -714,17 +756,37 @@ func (e *Editor) changeRollZoom(index int) {
 	if index%2 == 0 {
 		factor = 1 / factor
 	}
-	if index < 2 {
+	e.zoomRoll(index < 2, factor, (e.rollWidth-rollKeysWidth)/2)
+}
+
+func (e *Editor) zoomRoll(horizontal bool, factor, anchor float32) {
+	if horizontal {
 		next := max(float32(0.02), min(float32(4), e.zoom*factor))
-		center := (e.rollWidth - rollKeysWidth) / 2
-		e.scrollX = (e.scrollX+center)*next/e.zoom - center
+		e.scrollX = (e.scrollX+anchor)*next/e.zoom - anchor
 		e.zoom = next
+		e.clampRollScroll()
 		return
 	}
 	next := max(float32(10), min(float32(40), e.rowHeight*factor))
 	center := (e.rollHeight - rollHeaderHeight) / 2
 	e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*next-e.rollHeight+rollHeaderHeight), (e.scrollY+center)*next/e.rowHeight-center))
 	e.rowHeight = next
+}
+
+// Keep the last occupied bar available at the left edge, including sustained notes.
+func (e *Editor) clampRollScroll() {
+	e.ensureRollIndex()
+	var end int64
+	for _, ends := range e.rollEnds {
+		if len(ends) > 0 {
+			end = max(end, ends[len(ends)-1])
+		}
+	}
+	last := max(int64(0), end-1)
+	i := max(0, sort.Search(len(e.meters), func(i int) bool { return e.meters[i].Tick > last })-1)
+	m := e.meters[i]
+	barStart := m.Tick + (last-m.Tick)/m.Size*m.Size
+	e.scrollX = max(-float32(e.doc.Song.BarTicks()*2)*e.zoom, min(float32(barStart)*e.zoom, e.scrollX))
 }
 
 func isBlack(k int) bool {
@@ -757,9 +819,11 @@ func (e *Editor) rollInput(ev ui.InputEvent) bool {
 	switch ev.Kind {
 	case ui.InputScroll:
 		if ev.Mods&ui.Ctrl != 0 {
-			e.zoom = max(0.02, min(4, e.zoom*float32(math.Exp(-float64(ev.DY)/250))))
+			factor := float32(math.Exp(-float64(ev.DY) / 250))
+			e.zoomRoll(ev.Mods&ui.Shift == 0, factor, max(0, min(e.rollWidth-rollKeysWidth, ev.X-rollKeysWidth)))
 		} else if ev.Mods&ui.Shift != 0 {
 			e.scrollX += ev.DY
+			e.clampRollScroll()
 		} else {
 			e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-e.rollHeight+rollHeaderHeight), e.scrollY+ev.DY))
 		}
@@ -877,6 +941,7 @@ func (e *Editor) rollInput(ev ui.InputEvent) bool {
 			e.seek(e.tickAtX(ev.X))
 		case "pan":
 			e.scrollX = e.dragScrollX - (ev.X - e.dragX)
+			e.clampRollScroll()
 			e.scrollY = max(0, min(max(0, float32(pianoHigh-pianoLow+1)*e.rowHeight-e.rollHeight+rollHeaderHeight), e.dragScrollY-(ev.Y-e.dragY)))
 			if e.mode == "播放" {
 				e.seek(e.tickAtX((e.rollWidth + rollKeysWidth) / 2))
@@ -1035,9 +1100,11 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 		if !e.doc.Song.Audible(i) {
 			continue
 		}
-		for _, n := range e.visibleNotes(i, tick, tick+1) {
-			if float64(n.Tick) <= tick && float64(n.Tick+n.Duration) > tick {
-				active[int(n.Key)] = true
+		if playing && e.drag == "" {
+			for _, n := range e.visibleNotes(i, tick, tick+1) {
+				if float64(n.Tick) <= tick && float64(n.Tick+n.Duration) > tick {
+					active[int(n.Key)] = true
+				}
 			}
 		}
 		if e.mode != "练习" && playing && e.drag == "" && tick >= e.displayTick {

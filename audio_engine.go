@@ -397,18 +397,6 @@ func (a *AudioEngine) Note(track, key int, down bool) {
 	}
 	a.sendLocked(track, smf.Message{status, byte(key), 100})
 }
-func (a *AudioEngine) Silence() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.voices = nil
-	a.phase = nil
-	for _, in := range a.instruments {
-		if in.Synth != nil {
-			in.Synth.NoteOffAll(true)
-		}
-	}
-	clear(a.hold)
-}
 func (a *AudioEngine) sendLocked(track int, m smf.Message) {
 	if track < 0 || track >= len(a.instruments) || len(m) < 2 || m[0] >= 0xf0 {
 		return

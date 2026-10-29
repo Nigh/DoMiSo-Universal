@@ -73,6 +73,111 @@ func TestTransportNavigationAndReadOnlySongInfo(t *testing.T) {
 	}
 }
 
+func TestTransportNavigationRevealsPausedPlayhead(t *testing.T) {
+	for _, mode := range []string{"编辑", "播放", "练习"} {
+		for _, follow := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/follow=%v", mode, follow), func(t *testing.T) {
+				e := newEditor()
+				e.mode, e.follow = mode, follow
+				e.doc.Song = emptySong()
+				e.doc.Song.Tracks[0].Notes = []Note{{ID: 1, Duration: 40000, Key: 60, Velocity: 100}}
+				if err := e.audio.Configure(e.doc.Song); err != nil {
+					t.Fatal(err)
+				}
+				tester := ui.NewTester(func(c *ui.Context) {
+					tick, playing := e.transportState()
+					ui.Column(c).Children(func() {
+						ui.Box(c).Height(200).Draw(func(p *ui.Painter, r ui.Rect) {
+							e.rollWidth = r.W
+							if mode == "练习" {
+								e.drawPracticeTimeline(p, r, tick, playing)
+							} else {
+								e.drawRoll(p, r, tick, playing)
+							}
+						})
+						e.transportBar(c, tick, playing)
+					})
+				}, 1200, 400)
+				for _, step := range []struct {
+					label  string
+					want   float64
+					scroll float32
+				}{
+					{"移动到结尾", 40000, 0},
+					{"移动到开头", 0, 5000},
+					{"往后一小节", 1920, 5000},
+					{"往前一小节", 0, 5000},
+				} {
+					e.scrollX = step.scroll
+					if err := tester.Click(step.label); err != nil {
+						t.Fatal(err)
+					}
+					tester.Frame()
+					tick, playing := e.transportState()
+					width := e.rollWidth
+					if mode != "练习" {
+						width -= rollKeysWidth
+					}
+					head := float32(tick)*e.zoom - e.scrollX
+					if tick != step.want || playing || head < 0 || head >= width || e.revealPlayhead || e.follow != follow {
+						t.Fatalf("%s: tick=%g playing=%v head=%g width=%g pending=%v follow=%v", step.label, tick, playing, head, width, e.revealPlayhead, e.follow)
+					}
+				}
+				e.scrollX = 5000
+				tester.Frame()
+				if e.scrollX != 5000 {
+					t.Fatal("paused frame undid manual scrolling after navigation")
+				}
+			})
+		}
+	}
+}
+
+func TestPlaybackKeyboardReleasesAtRoundedAudioEnd(t *testing.T) {
+	e := newEditor()
+	e.mode = "播放"
+	e.doc.Song = emptySong()
+	e.doc.Song.SetTempo(123)
+	e.doc.Song.Tracks[0].Notes = []Note{{ID: 1, Duration: 1920, Key: 60, Velocity: 100}}
+	if err := e.audio.Configure(e.doc.Song); err != nil {
+		t.Fatal(err)
+	}
+	e.audio.Play(true)
+	tester := ui.NewTester(func(c *ui.Context) {
+		tick, _ := e.transportState()
+		e.keyboard(c, tick)
+	}, 780, 156)
+	checkOutline := func(want bool) {
+		t.Helper()
+		bounds, width, height := keyboardGeometry(ui.Rect{W: 780, H: 156}, false)
+		x, y := int(bounds.X+2.25*width), int(bounds.Y+3+2*height)
+		found := false
+		for dy := -1; dy <= 2; dy++ {
+			pixel := tester.Image().RGBAAt(x, y+dy)
+			if pixel.R == palette.Accent.R && pixel.G == palette.Accent.G && pixel.B == palette.Accent.B {
+				found = true
+			}
+		}
+		if found != want {
+			t.Fatalf("playback key outline=%v, want %v", found, want)
+		}
+	}
+	checkOutline(true)
+	e.audio.Read(make([]byte, int(e.audio.end+1024)*8))
+	tick, playing := e.transportState()
+	if playing || tick >= 1920 || tick < 1919 {
+		t.Fatalf("expected stopped clock just before note end after sample rounding: tick=%g playing=%v", tick, playing)
+	}
+	tester.Frame()
+	checkOutline(false)
+	e.noteInput("KeyA", true, false)
+	tester.Frame()
+	checkOutline(true)
+	e.noteInput("KeyA", false, false)
+	tester.Frame()
+	checkOutline(false)
+}
+
 func TestTransportPositionUsesTempoAndMeterMaps(t *testing.T) {
 	e := newEditor()
 	e.doc.Song = testSong()
