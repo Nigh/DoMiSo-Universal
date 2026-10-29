@@ -1120,7 +1120,7 @@ func (e *Editor) keyboard(c *ui.Context, tick float64) {
 	if e.mode == "练习" {
 		keyboard.Grow(1)
 	} else {
-		keyboard.Height(156)
+		keyboard.Height(156).MinHeight(150).Shrink(0)
 	}
 	keyboard.HandleInput(func(ev ui.InputEvent) bool { return e.keyInput(ev) }).Draw(func(painter *ui.Painter, r ui.Rect) {
 		bounds, width, rowHeight := keyboardGeometry(r, e.mode == "练习")
