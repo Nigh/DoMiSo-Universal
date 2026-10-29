@@ -82,11 +82,12 @@ func (e *Editor) practiceTimelineStatus(tick float64, playing bool) string {
 func (e *Editor) drawPracticeTimeline(p *ui.Painter, r ui.Rect, tick float64, playing bool) {
 	e.ensurePracticeTimeline()
 	e.ensureRollIndex()
-	if playing && e.drag == "" {
+	if (playing || e.revealPlayhead) && e.drag == "" {
 		head := float32(tick)*e.zoom - e.scrollX
 		if e.follow || head < 0 || head >= r.W {
 			e.scrollX = float32(tick)*e.zoom - r.W/2
 		}
+		e.revealPlayhead = false
 	}
 	e.scrollX = max(-float32(e.doc.Song.BarTicks()*2)*e.zoom, e.scrollX)
 	p.Fill(r, palette.Background, 0)

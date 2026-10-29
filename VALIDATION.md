@@ -74,3 +74,25 @@ Windows Go 1.27.3: full tests, vet and `go build -trimpath -o bin/ ./...` passed
 Removed the fixed 104-DIP height and 50% height cap from the notation editor. Its column and text area now grow through the remaining sidebar height; the track list and text area own their scrolling, while the regeneration button stays at the bottom.
 
 The layout regression covers edit/playback modes at 1120×760 and 1120×900: increasing window height by 140 DIP increases the text area height and moves the regeneration button by the same amount, without overlap with the bottom transport. Text-entry/Space and metadata/sample layout checks pass. Software previews at 1380×900 and 1120×760 were rendered and visually inspected using `DOMISO_RENDER_PREVIEW=1 go test -run TestNativeView -count=1`.
+
+## 2026-10-29 instrument and transport fixes
+
+Windows amd64, Go 1.27.3: `go test ./...`, `go vet ./...` and `go build -trimpath -o bin/domiso-universal.exe .` passed. Regression coverage includes compact SoundFont selection, 100% defaults and explicit saved volume preservation, paused navigation with follow enabled/disabled, and keyboard-preview release after the final note.
+
+A temporary full-view smoke scenario loaded GeneralUser-GS.sf2 and rendered 1120×760 and 1380×900 views. Both previews were inspected: the preset selector stays compact and the default volume displays 100%. The temporary source was removed; ignored previews remain under `bin/`. The native executable completed `--benchmark`; startup reported `register Ctrl+Alt+F8: Hot key is already registered.` Physical audio latency, real-game injection and Linux were not revalidated.
+
+## 2026-10-29 roll wheel zoom and scroll limits
+
+Windows Go 1.27.3: full tests, vet and native build passed. Rendered interaction regressions verify mouse-anchored Ctrl+wheel horizontal zoom, viewport-centered Ctrl+Shift+wheel vertical zoom, axis independence, zoom bounds, and horizontal scroll bounds with sustained notes and meter changes. Non-note events do not extend the right boundary; empty rolls stop at zero.
+
+A temporary 1120×760 smoke scenario applied both wheel zoom shortcuts and rendered the native view. The preview was inspected; shortcut hints fit without overlapping transport controls. The native executable completed `--benchmark`. Temporary source was removed; the ignored preview remains in `bin/roll-zoom-smoke.png`. Physical mouse-wheel hardware and Linux were not revalidated.
+
+## 2026-10-29 grid stability, compact labels and track selection
+
+The roll's old 1-DIP lines rounded their two edges independently. At fractional device scales, subpixel scrolling alternated the physical width between one and two pixels. Grid strokes now align their origin and keep a fixed physical width. Rendered regressions cover 20 fractional scroll phases at 100%, 125%, 150% and 200%.
+
+At the minimum 10-DIP pitch row, fixed font sizes and offsets clipped note labels and misplaced piano labels. Labels now use font metrics for fitting and centering; piano labels render after key shapes. Regressions verify piano labels and note-name/number labels remain inside their pitch rows with visible glyphs.
+
+Track selection called global audio silence through live-key cleanup. Cleanup now releases only owned live input on its original track and ignores unmatched key-up events. PCM comparisons cover uninterrupted built-in and sampled playback, while state checks preserve clocks, event cursors, sustain, loop and wait state.
+
+Windows Go 1.27.3: `go test ./...`, `go vet ./...`, native build and the actual executable's `--benchmark` passed. A temporary 1120×760 full-view scenario rendered minimum-height labels and fractional scroll positions at 100%, 125% and 200%; inspected the 100% and 125% images. Temporary source was removed; ignored images remain under `bin/render-fix-*.png`. Physical audio, monitor-refresh behavior and Linux were not revalidated.

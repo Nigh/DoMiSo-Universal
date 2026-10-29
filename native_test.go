@@ -281,6 +281,7 @@ func TestNativeEditorGestures(t *testing.T) {
 }
 func TestNativeRollZoomControls(t *testing.T) {
 	e := newEditor()
+	e.doc.Song.Tracks[0].Notes = []Note{{ID: 1, Tick: 20000, Duration: 480, Key: 60, Velocity: 100}}
 	e.rollWidth, e.rollHeight = 600, 300
 	centerX := (e.rollWidth + rollKeysWidth) / 2
 	beforeTick := e.tickAtX(centerX)

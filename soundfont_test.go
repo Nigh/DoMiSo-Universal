@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/sinshu/go-meltysynth/meltysynth"
 	"gitlab.com/gomidi/midi/v2/smf"
 )
@@ -78,6 +79,14 @@ func TestLocalSoundFontPresetPlaybackAndSave(t *testing.T) {
 	sf, names := a.soundFontPresets(0)
 	if len(sf.Presets) < 2 || len(names) != len(sf.Presets)+1 {
 		t.Fatal("SoundFont choices do not expose actual presets")
+	}
+	e := newEditor()
+	e.doc.Song = s
+	e.audio = a
+	tester := ui.NewTester(e.trackBar, 1000, 220)
+	control, ok := tester.Find("SoundFont 音色，显示实际 Bank 和 Program，数值从 0 开始")
+	if !ok || control.W > 280 || control.W < 180 {
+		t.Fatalf("SoundFont selector must remain compact: found=%v, bounds=%+v", ok, control)
 	}
 	reference, err := meltysynth.NewSynthesizer(sf, meltysynth.NewSynthesizerSettings(sampleRate))
 	if err != nil {

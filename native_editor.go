@@ -15,9 +15,15 @@ import (
 	"time"
 )
 
+type heldNoteInput struct {
+	key, track int
+	game       bool
+}
+
 type Editor struct {
 	inputFocused, buildFocus               bool
 	focusRoll                              bool
+	revealPlayhead                         bool
 	benchmark                              bool
 	dragChanged                            bool
 	dragPlaying                            bool
@@ -60,7 +66,7 @@ type Editor struct {
 	dragNotes                              []Note
 	boxX, boxY                             float32
 	pressed                                map[int]bool
-	keyDown                                map[string]int
+	keyDown                                map[string]heldNoteInput
 	recordStart                            map[int]int64
 	flashes                                map[int]time.Time
 	profiles                               []GameProfile
@@ -81,7 +87,7 @@ type appSettings struct {
 
 func newEditor() *Editor {
 	p := builtinProfile()
-	e := &Editor{doc: Document{Song: emptySong()}, selected: map[int]bool{}, zoom: 0.15, rowHeight: 20, scrollY: 44 * 20, grid: "1/4", label: "简谱", mode: "编辑", tonic: 60, follow: true, loopEnd: 1920, pressed: map[int]bool{}, keyDown: map[string]int{}, recordStart: map[int]int64{}, flashes: map[int]time.Time{}, fresh: map[int]bool{}, profiles: []GameProfile{p}, profileName: p.Name, state: p.InitialState, sampleRoot: 60, tempo: 120, meterNum: 4, meterDen: "4", buffer: "20", message: "打开曲谱，或输入 DoMiSo 后生成"}
+	e := &Editor{doc: Document{Song: emptySong()}, selected: map[int]bool{}, zoom: 0.15, rowHeight: 20, scrollY: 44 * 20, grid: "1/4", label: "简谱", mode: "编辑", tonic: 60, follow: true, loopEnd: 1920, pressed: map[int]bool{}, keyDown: map[string]heldNoteInput{}, recordStart: map[int]int64{}, flashes: map[int]time.Time{}, fresh: map[int]bool{}, profiles: []GameProfile{p}, profileName: p.Name, state: p.InitialState, sampleRoot: 60, tempo: 120, meterNum: 4, meterDen: "4", buffer: "20", message: "打开曲谱，或输入 DoMiSo 后生成"}
 	e.readSettings()
 	applyDefaultInstrument(&e.doc.Song)
 	ms := 20
@@ -471,19 +477,21 @@ func (e *Editor) seek(tick float64) {
 		e.audio.PreviewTick(tick)
 	} else {
 		e.audio.SeekTick(tick)
+		e.revealPlayhead = true
 	}
 	e.groups = nil
 	e.practiceWait = false
 }
 func (e *Editor) releaseKeys() {
-	for code, n := range e.keyDown {
-		e.audio.Note(e.track, n, false)
+	for code, held := range e.keyDown {
+		if !held.game {
+			e.audio.Note(held.track, held.key, false)
+		}
 		delete(e.keyDown, code)
 	}
-	e.pressed = map[int]bool{}
+	clear(e.pressed)
 	clear(e.fresh)
 	e.finishRecording()
-	e.audio.Silence()
 }
 func (e *Editor) finishRecording() {
 	if len(e.recordStart) == 0 {
@@ -510,12 +518,14 @@ func (e *Editor) addRecorded(key int, start, end int64) {
 func (e *Editor) noteInput(code string, down bool, game bool) {
 	p := e.profile()
 	n, state, ok := p.Binding(e.state, code)
+	track := e.track
 	if !down {
-		if held, exists := e.keyDown[code]; exists {
-			n = held
-			ok = true
-			delete(e.keyDown, code)
+		held, exists := e.keyDown[code]
+		if !exists {
+			return
 		}
+		n, track, game, ok = held.key, held.track, held.game, true
+		delete(e.keyDown, code)
 	}
 	if down && state != e.state {
 		e.state = state
@@ -528,7 +538,7 @@ func (e *Editor) noteInput(code string, down bool, game bool) {
 		if _, held := e.keyDown[code]; held {
 			return
 		}
-		e.keyDown[code] = n
+		e.keyDown[code] = heldNoteInput{key: n, track: track, game: game}
 		e.pressed[n] = true
 		e.fresh[n] = true
 		e.flashes[n] = time.Now()
@@ -536,7 +546,7 @@ func (e *Editor) noteInput(code string, down bool, game bool) {
 		delete(e.pressed, n)
 	}
 	if !game {
-		e.audio.Note(e.track, n, down)
+		e.audio.Note(track, n, down)
 		if e.recording && e.mode == "编辑" {
 			tick, _ := e.audio.State()
 			if down && tick >= 0 {

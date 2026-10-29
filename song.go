@@ -37,6 +37,17 @@ type TrackSettings struct {
 	Mute       bool       `json:"mute,omitempty"`
 	Solo       bool       `json:"solo,omitempty"`
 }
+
+func (s *TrackSettings) UnmarshalJSON(data []byte) error {
+	type settings TrackSettings
+	value := settings{Volume: 1}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*s = TrackSettings(value)
+	return nil
+}
+
 type Track struct {
 	Name     string
 	Notes    []Note
@@ -104,7 +115,7 @@ func barsInRange(meters []MeterPoint, left, right int64, fn func(tick, bar int64
 	}
 }
 
-func newTrack(name string) Track { return Track{Name: name, Settings: TrackSettings{Volume: 0.7}} }
+func newTrack(name string) Track { return Track{Name: name, Settings: TrackSettings{Volume: 1}} }
 func emptySong() Song            { return Song{PPQ: 480, Tracks: []Track{newTrack("Track 1")}} }
 func readSong(data []byte) (result Song, err error) {
 	if len(data) < 14 || string(data[:4]) != "MThd" || binary.BigEndian.Uint16(data[8:10]) > 1 || binary.BigEndian.Uint16(data[12:14])&0x8000 != 0 {
